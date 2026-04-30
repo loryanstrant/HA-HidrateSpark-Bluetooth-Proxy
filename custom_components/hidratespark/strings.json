@@ -1,0 +1,51 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Set up HidrateSpark",
+        "description": "Choose a HidrateSpark bottle that's currently advertising, or enter its Bluetooth address manually. The bottle must be paired with the official app at least once before this will work.",
+        "data": {
+          "address": "Bottle",
+          "size_ml": "Bottle capacity (mL)"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Add HidrateSpark",
+        "description": "Set up {name}?",
+        "data": {
+          "size_ml": "Bottle capacity (mL)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This bottle is already configured.",
+      "not_supported": "This Bluetooth device does not look like a HidrateSpark bottle."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HidrateSpark options",
+        "data": {
+          "size_ml": "Bottle capacity (mL)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": { "name": "Battery" },
+      "water_today": { "name": "Water today" },
+      "water_lifetime": { "name": "Water lifetime" },
+      "current_fill": { "name": "Current fill" },
+      "current_fill_pct": { "name": "Current fill percent" },
+      "last_sip_volume": { "name": "Last sip volume" },
+      "last_sip_time": { "name": "Last sip time" },
+      "weight_raw": { "name": "Bottle weight (raw)" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Connected" }
+    }
+  }
+}

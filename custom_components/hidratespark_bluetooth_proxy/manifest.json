@@ -1,5 +1,5 @@
 {
-  "domain": "hidratespark",
+  "domain": "hidratespark_bluetooth_proxy",
   "name": "HidrateSpark Bluetooth Proxy",
   "dependencies": ["bluetooth_adapters"],
   "codeowners": ["@loryanstrant"],

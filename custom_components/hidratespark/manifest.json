@@ -1,9 +1,9 @@
 {
   "domain": "hidratespark",
-  "name": "HidrateSpark",
+  "name": "HidrateSpark Bluetooth Proxy",
   "version": "0.1.0",
-  "documentation": "https://github.com/loryanstrant/HidrateSpark-HA-Integration",
-  "issue_tracker": "https://github.com/loryanstrant/HidrateSpark-HA-Integration/issues",
+  "documentation": "https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy",
+  "issue_tracker": "https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues",
   "codeowners": ["@loryanstrant"],
   "config_flow": true,
   "iot_class": "local_push",

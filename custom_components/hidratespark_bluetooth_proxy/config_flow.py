@@ -18,7 +18,8 @@ from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import ConfigFlow, OptionsFlow
+from homeassistant.data_entry_flow import FlowResult
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
@@ -56,7 +57,7 @@ class HidrateSparkConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
-    ) -> ConfigFlowResult:
+    ) -> FlowResult:
         """Handle a bottle discovered via the bluetooth integration."""
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
@@ -70,7 +71,7 @@ class HidrateSparkConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_bluetooth_confirm(
         self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    ) -> FlowResult:
         assert self._discovery_info is not None
         if user_input is not None:
             return self.async_create_entry(
@@ -100,7 +101,7 @@ class HidrateSparkConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    ) -> FlowResult:
         """Handle a manually-initiated flow."""
         if user_input is not None:
             address = user_input[CONF_ADDRESS].upper()
@@ -162,12 +163,9 @@ class HidrateSparkConfigFlow(ConfigFlow, domain=DOMAIN):
 class HidrateSparkOptionsFlow(OptionsFlow):
     """Allow the bottle size to be tuned after setup."""
 
-    def __init__(self, config_entry) -> None:
-        self.config_entry = config_entry
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    ) -> FlowResult:
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
         current = self.config_entry.options.get(

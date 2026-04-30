@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
-DOMAIN: Final = "hidratespark"
+DOMAIN: Final = "hidratespark_bluetooth_proxy"
 
 # Configuration keys
 CONF_ADDRESS: Final = "address"

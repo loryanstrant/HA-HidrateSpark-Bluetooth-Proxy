@@ -6,7 +6,7 @@
       "service_uuid": "45855422-6565-4cd7-a2a9-fe8af41b85e8",
       "connectable": true
     }
-  ]
+  ],
   "codeowners": ["@loryanstrant"],
   "config_flow": true,
   "dependencies": ["bluetooth_adapters"],
@@ -15,5 +15,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues",
   "requirements": ["bleak>=0.22.0", "bleak-retry-connector>=3.5.0"],
-  "version": "0.1.1"
+  "version": "0.1.2"
 }

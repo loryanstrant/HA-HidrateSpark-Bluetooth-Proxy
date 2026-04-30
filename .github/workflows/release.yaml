@@ -1,0 +1,32 @@
+name: "Release"
+
+on:
+  release:
+    types:
+      - published
+permissions:
+  contents: write
+  packages: write
+
+
+jobs:
+  release:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create zip file
+        run: |
+          cd custom_components/hidratespark_bluetooth_proxy
+          zip -r ../../hidratespark_bluetooth_proxy.zip . -x "__pycache__/*" "*.pyc" "*.pyo"
+
+      - name: Upload zip to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./hidratespark_bluetooth_proxy.zip
+          asset_name: hidratespark_bluetooth_proxy.zip
+          tag: ${{ github.event.release.tag_name }}
+          overwrite: true

@@ -1,7 +1,6 @@
 {
-  "name": "HidrateSpark",
+  "name": "HidrateSpark Bluetooth Proxy",
   "render_readme": true,
   "homeassistant": "2024.4.0",
-  "zip_release": false,
-  "country": ["AU", "US", "GB", "CA", "NZ", "IE"]
+  "zip_release": false
 }

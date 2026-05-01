@@ -62,6 +62,7 @@ class BottleClient:
         address: str,
         name: str,
         *,
+        size_ml: int,
         on_sip: SipCallback,
         on_battery: BatteryCallback,
         on_status: StatusCallback,
@@ -71,6 +72,7 @@ class BottleClient:
     ) -> None:
         self.address = address.upper().strip()
         self.name = name
+        self.size_ml = max(1, int(size_ml))
         self._on_sip = on_sip
         self._on_battery = on_battery
         self._on_status = on_status
@@ -196,6 +198,11 @@ class BottleClient:
     # ------------------------------------------------------------ post-connect
 
     async def _after_connect(self, client: BleakClient) -> None:
+        # Reset per-connection state so a previous connection's choices don't
+        # leak in if the firmware behaviour changed (or the previous attempt
+        # half-succeeded).
+        self._handshake_path = None
+        self._data_char = None
         # Battery: read once, then subscribe for change notifications.
         try:
             data = await client.read_gatt_char(CHAR_BATTERY_LEVEL)
@@ -271,40 +278,72 @@ class BottleClient:
         await self._on_battery(data[0])
 
     async def _on_data_notify(self, _char, data: bytearray) -> None:
-        # Frame layout (20 bytes typical):
-        #   [0]   N pending sips remaining
-        #   [1]   record type / flags
+        # HydroSync sip-record frame layout (>= 9 bytes):
+        #   [0]   N pending records remaining (0 = empty queue)
+        #   [1]   sip volume as percent of bottle capacity
         #   [2:4] total reported volume so far, big-endian u16 (mL)
-        #   [4:8] sip timestamp, big-endian u32 (Unix epoch s)
-        #   [8:10] sip volume, big-endian u16 (mL)
-        if len(data) < 10:
+        #   [4]   reserved / record type
+        #   [5:9] seconds-ago for this sip, big-endian u32
+        # Volume in mL is derived from the percent * configured bottle size.
+        if not self._connected or self._stop.is_set():
+            return
+        if not data:
             return
 
-        pending = data[0]
-        try:
-            total_reported = int.from_bytes(data[2:4], "big")
-            ts = int.from_bytes(data[4:8], "big")
-            volume = int.from_bytes(data[8:10], "big")
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("malformed sip frame %s: %s", data.hex(), err)
+        remaining = data[0]
+
+        # An empty-queue announcement: nothing to parse, no need to re-drain.
+        if remaining == 0:
+            _LOGGER.debug("sip frame: queue empty")
             return
 
-        if volume > 0 and ts > 0:
-            try:
-                await self._on_sip(float(ts), int(volume), int(total_reported))
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.warning("sip handler error: %s", err)
-
-        # Drain again whenever there are pending records, even if this frame
-        # didn't parse cleanly — that fixes a class of bugs where the very
-        # first real-data frame has a non-standard layout and stalls the queue.
-        if pending > 0 and self._client and self._client.is_connected:
+        # Re-drain immediately so the bottle pushes the next record. Some
+        # firmwares first send a short "N pending" frame and only emit the
+        # real record after the next 0x57.
+        if self._client and self._client.is_connected:
             try:
                 await self._drain(self._client)
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug("inline drain failed: %s", err)
 
+        if len(data) < 9:
+            _LOGGER.debug("sip frame too short (%d): %s", len(data), data.hex())
+            return
+
+        try:
+            pct = data[1]
+            total_reported = int.from_bytes(data[2:4], "big")
+            seconds_ago = int.from_bytes(data[5:9], "big")
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("malformed sip frame %s: %s", data.hex(), err)
+            return
+
+        # Sanity clamp: ignore obviously bogus seconds-ago (> 10 years).
+        if seconds_ago > 10 * 365 * 24 * 3600:
+            seconds_ago = 0
+        ts = time.time() - seconds_ago
+        volume_ml = round(self.size_ml * pct / 100)
+
+        if volume_ml <= 0 or pct == 0:
+            _LOGGER.debug(
+                "skipping zero-volume sip frame (pct=%d, total=%d)",
+                pct, total_reported,
+            )
+            return
+
+        _LOGGER.info(
+            "sip: %dml (pct=%d, total_reported=%d, %ds ago, remaining=%d)",
+            volume_ml, pct, total_reported, seconds_ago, remaining,
+        )
+
+        try:
+            await self._on_sip(float(ts), int(volume_ml), int(total_reported))
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("sip handler error: %s", err)
+
     async def _on_cap_notify(self, _char, data: bytearray) -> None:
+        if not self._connected or self._stop.is_set():
+            return
         if not data:
             return
         # bit 0 of byte 0: 1 = open, 0 = closed
@@ -321,6 +360,8 @@ class BottleClient:
             self._refill_check_task = asyncio.create_task(self._check_refill_after_close())
 
     async def _on_weight_notify(self, _char, data: bytearray) -> None:
+        if not self._connected or self._stop.is_set():
+            return
         if len(data) < 2:
             return
         high = data[0]
@@ -354,17 +395,28 @@ class BottleClient:
 
     async def _check_refill_after_close(self) -> None:
         """After cap closes, wait for a stable upright reading and compare."""
+        if self._stop.is_set():
+            return
         deadline = time.monotonic() + REFILL_SETTLE_TIMEOUT_S
         baseline = self._pre_open_weight_low
         try:
             while time.monotonic() < deadline:
                 await asyncio.sleep(1.0)
+                if self._stop.is_set():
+                    return
                 post = self._weight_stable_low
                 if post is None:
                     continue
                 if baseline is None:
-                    # No pre-open snapshot — treat any post-close stable as the new anchor.
-                    await self._on_refill("cap_close", post)
+                    # No pre-open snapshot — don't declare a refill, just
+                    # adopt this reading as the calibration anchor so that
+                    # subsequent fill calculations work. (Avoids a spurious
+                    # refill on the very first cap-close after install.)
+                    _LOGGER.debug(
+                        "refill check: no pre-open baseline; adopting %s as anchor",
+                        post,
+                    )
+                    await self._on_refill("calibration", post)
                     return
                 if post - baseline >= REFILL_MIN_DELTA:
                     _LOGGER.info(

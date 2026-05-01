@@ -144,8 +144,11 @@ class BottleState:
             ):
                 return False
 
-        # Day rollover keyed by the sip's local date.
-        sip_date = datetime.fromtimestamp(sip.timestamp).strftime("%Y-%m-%d")
+        # Day rollover keyed by the sip's UTC date so changes in the host
+        # timezone (DST, container migration) don't shuffle the day boundary.
+        sip_date = datetime.fromtimestamp(
+            sip.timestamp, tz=timezone.utc
+        ).strftime("%Y-%m-%d")
         if sip_date != self._today_date:
             self._today_date = sip_date
             self._total_today_ml = 0
@@ -173,9 +176,10 @@ class BottleState:
 
     @property
     def total_today_ml(self) -> int:
-        # Late-day rollover: if no sip has come in yet today, we still want the
-        # sensor to read 0 once midnight has passed.
-        today = datetime.now().strftime("%Y-%m-%d")
+        # Late-day rollover: if no sip has come in yet today, we still want
+        # the sensor to read 0 once midnight has passed. UTC keyed to match
+        # how sips are bucketed.
+        today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
         if today != self._today_date:
             return 0
         return self._total_today_ml

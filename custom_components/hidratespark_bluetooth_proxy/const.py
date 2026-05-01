@@ -71,9 +71,10 @@ HANDSHAKE_COMMANDS: Final[list[tuple[str, str]]] = [
 ]
 HANDSHAKE_INTERVAL_S: Final = 0.05
 
-# Sip dedup window
-SIP_DEDUP_WINDOW: Final = 10  # check against last N sips
-SIP_DEDUP_TIMESTAMP_TOLERANCE_S: Final = 2
+# Sip dedup window — wider than the upstream MQTT bridge because BLE relay
+# via an ESPHome proxy can add a few seconds of timestamp jitter on replays.
+SIP_DEDUP_WINDOW: Final = 50  # check against last N sips
+SIP_DEDUP_TIMESTAMP_TOLERANCE_S: Final = 5
 
 # Persistence storage
 STORAGE_VERSION: Final = 1

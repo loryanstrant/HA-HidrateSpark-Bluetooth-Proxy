@@ -71,6 +71,7 @@ class HidrateSparkCoordinator:
         self._client = BottleClient(
             address=self.address,
             name=self.name,
+            size_ml=self.state.bottle_size_ml,
             on_sip=self._handle_sip,
             on_battery=self._handle_battery,
             on_status=self._handle_status,

@@ -48,7 +48,7 @@ SENSORS: tuple[SensorEntityDescription, ...] = (
         key="current_fill",
         translation_key="current_fill",
         native_unit_of_measurement=UnitOfVolume.MILLILITERS,
-        device_class=SensorDeviceClass.VOLUME,
+        device_class=SensorDeviceClass.VOLUME_STORAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorEntityDescription(
@@ -61,8 +61,7 @@ SENSORS: tuple[SensorEntityDescription, ...] = (
         key="last_sip_volume",
         translation_key="last_sip_volume",
         native_unit_of_measurement=UnitOfVolume.MILLILITERS,
-        device_class=SensorDeviceClass.VOLUME,
-        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.VOLUME_STORAGE,
     ),
     SensorEntityDescription(
         key="last_sip_time",
@@ -127,8 +126,9 @@ class HidrateSparkSensor(HidrateSparkEntity, SensorEntity):
 
     @property
     def available(self) -> bool:
-        # Cached values are still meaningful while disconnected — but battery
-        # and weight are live-only. Match upstream behaviour: device-wide
-        # availability gates everything; LWT-style "offline" is the binary
-        # sensor's job.
+        # Live-only readings (battery, raw weight) become unavailable when
+        # the bottle is disconnected. Cached/accumulated values (totals,
+        # current fill, last sip) remain meaningful across disconnects.
+        if self.entity_description.key in ("battery", "weight_raw"):
+            return self._coordinator.connected
         return True

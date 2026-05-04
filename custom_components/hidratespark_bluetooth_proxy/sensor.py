@@ -69,6 +69,18 @@ SENSORS: tuple[SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.TIMESTAMP,
     ),
     SensorEntityDescription(
+        key="sips_today",
+        translation_key="sips_today",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:cup-water",
+    ),
+    SensorEntityDescription(
+        key="refills_today",
+        translation_key="refills_today",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:water-pump",
+    ),
+    SensorEntityDescription(
         key="weight_raw",
         translation_key="weight_raw",
         state_class=SensorStateClass.MEASUREMENT,
@@ -120,6 +132,10 @@ class HidrateSparkSensor(HidrateSparkEntity, SensorEntity):
             if state.last_sip is None:
                 return None
             return datetime.fromtimestamp(state.last_sip.timestamp, tz=timezone.utc)
+        if key == "sips_today":
+            return state.sips_today
+        if key == "refills_today":
+            return state.refills_today
         if key == "weight_raw":
             return state.weight_low
         return None

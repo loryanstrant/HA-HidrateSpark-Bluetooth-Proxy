@@ -331,9 +331,12 @@ class BottleClient:
             )
             return
 
+        # Diagnostic: log the raw frame at INFO so the seconds-ago byte
+        # range can be cross-checked when 'last sip time' looks off (e.g.
+        # users reporting it always trails by ~2 minutes).
         _LOGGER.info(
-            "sip: %dml (pct=%d, total_reported=%d, %ds ago, remaining=%d)",
-            volume_ml, pct, total_reported, seconds_ago, remaining,
+            "sip: %dml (pct=%d, total_reported=%d, %ds ago, remaining=%d) raw=%s",
+            volume_ml, pct, total_reported, seconds_ago, remaining, data.hex(),
         )
 
         try:

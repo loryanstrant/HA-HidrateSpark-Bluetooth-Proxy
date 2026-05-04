@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .const import (
     SIP_DEDUP_TIMESTAMP_TOLERANCE_S,
@@ -70,6 +71,8 @@ class BottleState:
         # Daily total with day rollover.
         self._today_date: str = ""
         self._total_today_ml: int = 0
+        self._sips_today: int = 0
+        self._refills_today: int = 0
 
         # Weight calibration: low-byte value at "full".
         self.weight_full_low: Optional[int] = None
@@ -84,6 +87,8 @@ class BottleState:
         self.last_refill_ts = data.get("last_refill_ts")
         self._today_date = str(data.get("today_date") or "")
         self._total_today_ml = int(data.get("total_today_ml") or 0)
+        self._sips_today = int(data.get("sips_today") or 0)
+        self._refills_today = int(data.get("refills_today") or 0)
         self.weight_full_low = data.get("weight_full_low")
 
     async def async_save(self) -> None:
@@ -94,6 +99,8 @@ class BottleState:
                 "last_refill_ts": self.last_refill_ts,
                 "today_date": self._today_date,
                 "total_today_ml": self._total_today_ml,
+                "sips_today": self._sips_today,
+                "refills_today": self._refills_today,
                 "weight_full_low": self.weight_full_low,
             }
         )
@@ -105,16 +112,41 @@ class BottleState:
         if self.current_fill_ml > size_ml:
             self.current_fill_ml = size_ml
 
+    def _local_date_str(self, ts: Optional[float] = None) -> str:
+        """Return YYYY-MM-DD in HA's configured local timezone.
+
+        Using HA's configured zone (Settings -> System -> General) keeps the
+        'water today' counter and the new sip/refill counters in sync with
+        what the user sees on the wall clock, including DST transitions.
+        """
+        if ts is None:
+            return dt_util.now().strftime("%Y-%m-%d")
+        return dt_util.as_local(
+            datetime.fromtimestamp(ts, tz=timezone.utc)
+        ).strftime("%Y-%m-%d")
+
+    def _maybe_rollover(self, ts: Optional[float] = None) -> None:
+        """Reset daily counters if `ts` (or now) falls on a new local date."""
+        date_str = self._local_date_str(ts)
+        if date_str != self._today_date:
+            self._today_date = date_str
+            self._total_today_ml = 0
+            self._sips_today = 0
+            self._refills_today = 0
+
     def refill(self, source: str, weight_full_low: Optional[int]) -> None:
+        self._maybe_rollover()
         self.current_fill_ml = self.bottle_size_ml
         self.last_refill_ts = time.time()
+        self._refills_today += 1
         if weight_full_low is not None:
             self.weight_full_low = weight_full_low
         _LOGGER.info(
-            "REFILL (%s): fill=%dml anchor=%s",
+            "REFILL (%s): fill=%dml anchor=%s refills_today=%d",
             source,
             self.current_fill_ml,
             self.weight_full_low,
+            self._refills_today,
         )
 
     def update_fill_from_weight(self, low_byte: int) -> bool:
@@ -144,19 +176,15 @@ class BottleState:
             ):
                 return False
 
-        # Day rollover keyed by the sip's UTC date so changes in the host
-        # timezone (DST, container migration) don't shuffle the day boundary.
-        sip_date = datetime.fromtimestamp(
-            sip.timestamp, tz=timezone.utc
-        ).strftime("%Y-%m-%d")
-        if sip_date != self._today_date:
-            self._today_date = sip_date
-            self._total_today_ml = 0
+        # Day rollover keyed on HA's configured local timezone so 'today'
+        # matches the user's wall clock (including DST).
+        self._maybe_rollover(sip.timestamp)
 
         self.sips.append(sip)
         self.last_sip = sip
         self.lifetime_total_ml += sip.volume_ml
         self._total_today_ml += sip.volume_ml
+        self._sips_today += 1
         self.last_seen = sip.timestamp
 
         # Sip-exceeds-fill: bottle was clearly refilled out-of-band.
@@ -177,12 +205,22 @@ class BottleState:
     @property
     def total_today_ml(self) -> int:
         # Late-day rollover: if no sip has come in yet today, we still want
-        # the sensor to read 0 once midnight has passed. UTC keyed to match
-        # how sips are bucketed.
-        today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
-        if today != self._today_date:
+        # the sensor to read 0 once midnight has passed (in HA's local zone).
+        if self._local_date_str() != self._today_date:
             return 0
         return self._total_today_ml
+
+    @property
+    def sips_today(self) -> int:
+        if self._local_date_str() != self._today_date:
+            return 0
+        return self._sips_today
+
+    @property
+    def refills_today(self) -> int:
+        if self._local_date_str() != self._today_date:
+            return 0
+        return self._refills_today
 
     @property
     def current_fill_pct(self) -> int:

@@ -42,6 +42,8 @@
       "current_fill_pct": { "name": "Current fill percent" },
       "last_sip_volume": { "name": "Last sip volume" },
       "last_sip_time": { "name": "Last sip time" },
+      "sips_today": { "name": "Sips today" },
+      "refills_today": { "name": "Refills today" },
       "weight_raw": { "name": "Bottle weight (raw)" }
     },
     "binary_sensor": {

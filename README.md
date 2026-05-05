@@ -35,6 +35,8 @@ works with a directly-attached USB or onboard adapter.
 - 🔁 State persists across HA restarts via the Store API
 - 📥 Buffered sips replay on reconnect with their original timestamps
 
+**NOTE:** This has only been tested on a HidrateSpark PRO (v1) 21oz / 621ml with chug lid.
+
 ## Requirements
 
 - Home Assistant 2024.4 or later

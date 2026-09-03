@@ -33,17 +33,20 @@ from .const import (
     HANDSHAKE_COMMANDS,
     HANDSHAKE_INTERVAL_S,
     MAX_IDENTICAL_SIP_FRAMES,
+    MAX_SIP_PCT,
     REFILL_MIN_DELTA_RAW,
     REFILL_SETTLE_TIMEOUT_S,
     REFILL_STABLE_SAMPLES,
     RAW_STABLE_TOLERANCE,
+    RAW_UNITS_PER_ML,
+    SIP_WEIGHT_CHECK_HEADROOM,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 # Callback signatures
-SipCallback = Callable[[float, int, int], Awaitable[None]]
-"""await on_sip(timestamp_unix_s, volume_ml, total_reported_ml)."""
+SipCallback = Callable[[float, int, int, bool], Awaitable[None]]
+"""await on_sip(timestamp_unix_s, volume_ml, total_reported_pct, rejected)."""
 
 BatteryCallback = Callable[[int], Awaitable[None]]
 StatusCallback = Callable[[bool, Optional[str]], Awaitable[None]]
@@ -93,6 +96,10 @@ class BottleClient:
         # pops instead of spinning in a write loop.
         self._last_frame_hex: Optional[str] = None
         self._frame_repeat = 0
+        # Highest running-total-percent seen so far, for the monotonic guard in
+        # _on_data_notify. In-memory only: it is a corruption tripwire, not an
+        # accounting figure, so starting fresh after a restart is fine.
+        self._last_total_pct: Optional[int] = None
 
         # Refill detection state (16-bit raw weight values)
         self._weight_stable_raw: Optional[int] = None
@@ -286,13 +293,32 @@ class BottleClient:
         await self._on_battery(data[0])
 
     async def _on_data_notify(self, _char, data: bytearray) -> None:
-        # HydroSync sip-record frame layout (>= 9 bytes):
-        #   [0]   N pending records remaining (0 = empty queue)
-        #   [1]   sip volume as percent of bottle capacity
-        #   [2:4] total reported volume so far, big-endian u16 (mL)
-        #   [4]   reserved / record type
-        #   [5:9] seconds-ago for this sip, big-endian u32
-        # Volume in mL is derived from the percent * configured bottle size.
+        # HydroSync sip-record frame: 20 bytes. This layout is derived from the
+        # 13 frames logged on a real bottle between 2026-09-01 and 2026-09-03,
+        # not from vendor documentation:
+        #
+        #   [0]     N pending records remaining (0 = empty queue)
+        #   [1]     sip volume as percent of bottle capacity
+        #   [2:4]   running total, little-endian u16 — a cumulative SUM OF THE
+        #           PERCENT FIELD, not mL. Resets daily, around midnight.
+        #   [4]     unknown; observed values 1, 4 and 8
+        #   [5:8]   always 00 00 00
+        #   [8:12]  the constant 75 87 2a 8b, identical in every frame
+        #   [12:14] bottle raw weight BEFORE the sip, little-endian u16
+        #   [14:16] bottle raw weight AFTER the sip, little-endian u16
+        #   [16:20] always zero
+        #
+        # Evidence for [2:4]: consecutive deltas equal the pct field exactly,
+        # eight frames running. Evidence for the weight pair: every frame's
+        # "before" equals the previous frame's "after", and the raw delta per
+        # percent is 9.5-10.5 across all twelve good frames.
+        #
+        # There is NO per-sip timestamp anywhere in the frame. The code used to
+        # read [5:9] big-endian as "seconds ago", which always yielded 117 (the
+        # 0x75 that starts the constant at [8]), so every sip was silently
+        # backdated by a fixed 1 min 57 s — the "last sip time trails by about
+        # two minutes" that users kept reporting. Frames arrive immediately
+        # after our own 0x57 drain, so arrival time is the best estimate we have.
         if not self._connected or self._stop.is_set():
             return
         if not data:
@@ -336,44 +362,106 @@ class BottleClient:
             _LOGGER.debug("sip frame too short (%d): %s", len(data), data.hex())
             return
 
-        try:
-            pct = data[1]
-            total_reported = int.from_bytes(data[2:4], "big")
-            seconds_ago = int.from_bytes(data[5:9], "big")
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("malformed sip frame %s: %s", data.hex(), err)
-            return
+        pct = data[1]
+        total_pct = int.from_bytes(data[2:4], "little")
+        # The weight pair only exists on full-length frames. Anything shorter
+        # simply skips the cross-check below rather than being rejected.
+        if len(data) >= 16:
+            weight_before = int.from_bytes(data[12:14], "little")
+            weight_after = int.from_bytes(data[14:16], "little")
+        else:
+            weight_before = weight_after = 0
 
-        # Drop frames with an obviously bogus seconds-ago (> 10 years) rather
-        # than fabricating a present-time sip from corrupt data.
-        if seconds_ago > 10 * 365 * 24 * 3600:
-            _LOGGER.debug(
-                "dropping sip frame with bogus seconds-ago=%d: %s",
-                seconds_ago, data.hex(),
-            )
-            return
-        ts = time.time() - seconds_ago
+        ts = time.time()
         volume_ml = round(self.size_ml * pct / 100)
 
         if volume_ml <= 0 or pct == 0:
             _LOGGER.debug(
-                "skipping zero-volume sip frame (pct=%d, total=%d)",
-                pct, total_reported,
+                "skipping zero-volume sip frame (pct=%d, total_pct=%d)",
+                pct, total_pct,
             )
             return
 
-        # Diagnostic: log the raw frame at INFO so the seconds-ago byte
-        # range can be cross-checked when 'last sip time' looks off (e.g.
-        # users reporting it always trails by ~2 minutes).
+        # Diagnostic: log the whole decoded frame at INFO, raw hex included, so
+        # the corpus keeps growing and any future decode question can be settled
+        # from real traffic rather than guesswork.
         _LOGGER.info(
-            "sip: %dml (pct=%d, total_reported=%d, %ds ago, remaining=%d) raw=%s",
-            volume_ml, pct, total_reported, seconds_ago, remaining, data.hex(),
+            "sip: %dml (pct=%d, total_pct=%d, remaining=%d, weight %d->%d) raw=%s",
+            volume_ml, pct, total_pct, remaining,
+            weight_before, weight_after, data.hex(),
         )
 
+        rejected = not self._sip_frame_is_plausible(
+            data, pct, total_pct, volume_ml, weight_before, weight_after
+        )
+
+        # An implausible frame is still handed over, flagged. It contributes to
+        # no total, but it has to reach the dedup window so the same record isn't
+        # replayed as new on the next drain.
         try:
-            await self._on_sip(float(ts), int(volume_ml), int(total_reported))
+            await self._on_sip(float(ts), int(volume_ml), int(total_pct), rejected)
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("sip handler error: %s", err)
+
+    def _sip_frame_is_plausible(
+        self,
+        data: bytearray,
+        pct: int,
+        total_pct: int,
+        volume_ml: int,
+        weight_before: int,
+        weight_after: int,
+    ) -> bool:
+        """Return False for a frame that cannot describe a real drink.
+
+        The caller still passes the sip on, flagged, so it reaches the dedup
+        window and isn't replayed as new later; it just contributes to no total.
+        The frame has already been acked by the inline re-drain above, so the
+        bottle's queue advances either way.
+        """
+        # 1. Implausible percent. A single sip does not empty a full bottle.
+        if pct >= MAX_SIP_PCT:
+            _LOGGER.warning(
+                "rejecting sip frame: pct=%d claims %dml, at or above the %d%% "
+                "ceiling for one sip. raw=%s",
+                pct, volume_ml, MAX_SIP_PCT, data.hex(),
+            )
+            return False
+
+        # 2. The running-total counter must not go backwards. It resets daily,
+        # and the first record after a reset always carries total == pct, so a
+        # decrease to at or below this frame's own pct is legitimate.
+        #
+        # The anchor is updated even when we reject, deliberately: if a record
+        # is ever missed right after a reset the decrease would look corrupt,
+        # and holding on to the old high-water mark would then reject every
+        # remaining sip of the day. Re-anchoring costs at most a single frame.
+        last_total = self._last_total_pct
+        self._last_total_pct = total_pct
+        if last_total is not None and total_pct < last_total and total_pct > pct:
+            _LOGGER.warning(
+                "rejecting sip frame: running total went backwards %d -> %d "
+                "without looking like a counter reset (pct=%d). raw=%s",
+                last_total, total_pct, pct, data.hex(),
+            )
+            return False
+
+        # 3. Cross-check the claimed volume against the bottle's own weight
+        # readings carried in this same frame. Fails open — an unusable pair is
+        # skipped, never treated as a reason to reject — because these bytes are
+        # undocumented and other firmwares may not populate them.
+        weight_delta = weight_before - weight_after
+        if weight_before > 0 and weight_after > 0 and weight_delta > 0:
+            supported_ml = weight_delta / RAW_UNITS_PER_ML
+            if volume_ml > SIP_WEIGHT_CHECK_HEADROOM * supported_ml:
+                _LOGGER.warning(
+                    "rejecting sip frame: claims %dml but the frame's own "
+                    "weight only dropped %d raw units (~%dml). raw=%s",
+                    volume_ml, weight_delta, round(supported_ml), data.hex(),
+                )
+                return False
+
+        return True
 
     async def _on_cap_notify(self, _char, data: bytearray) -> None:
         _LOGGER.debug("cap frame raw=%s", data.hex() if data else "<empty>")

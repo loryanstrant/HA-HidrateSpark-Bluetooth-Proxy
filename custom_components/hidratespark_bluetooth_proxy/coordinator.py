@@ -132,11 +132,20 @@ class HidrateSparkCoordinator:
     # ---------------------------------------------------------- BLE callbacks
 
     async def _handle_sip(
-        self, timestamp: float, volume_ml: int, _total_reported_ml: int
+        self,
+        timestamp: float,
+        volume_ml: int,
+        _total_reported_pct: int,
+        rejected: bool = False,
     ) -> None:
-        if self.state.add_sip(Sip(timestamp=timestamp, volume_ml=volume_ml)):
+        sip = Sip(timestamp=timestamp, volume_ml=volume_ml)
+        if self.state.add_sip(sip, rejected=rejected):
             await self.state.async_save()
             self._notify()
+        elif sip.rejected:
+            # Counted for nothing, but it went into the dedup window, so the
+            # window has to be persisted or the bottle replays it as new.
+            await self.state.async_save()
 
     async def _handle_battery(self, pct: int) -> None:
         if pct == self._battery_pct:

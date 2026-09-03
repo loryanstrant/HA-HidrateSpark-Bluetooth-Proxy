@@ -54,6 +54,40 @@ class DedupPersistenceTest(unittest.TestCase):
         )
         self.assertEqual(b2.lifetime_total_ml, 220)
 
+    def test_rejected_sip_survives_a_restart_in_the_window(self):
+        # Prod's phantom entry was deliberately left in recent_sips when the
+        # totals were corrected by hand, precisely so the next drain wouldn't
+        # replay it. Persisting the rejection is what makes that work.
+        b1 = new_bottle()
+        b1.add_sip(Sip(timestamp=local_ts(2026, 6, 18, 11, 0), volume_ml=100))
+        b1.add_sip(Sip(timestamp=local_ts(2026, 6, 18, 11, 30), volume_ml=946), rejected=True)
+        self.assertEqual(b1.lifetime_total_ml, 100)
+
+        b2 = _restart(b1)
+        self.assertEqual(b2.lifetime_total_ml, 100, "the phantom must not be restored")
+        self.assertFalse(
+            b2.add_sip(Sip(timestamp=local_ts(2026, 6, 18, 11, 30), volume_ml=946)),
+            "and its replay must still be recognised",
+        )
+        self.assertEqual(b2.lifetime_total_ml, 100)
+        self.assertEqual(
+            b2.last_sip.volume_ml, 100,
+            "the phantom must not be the last sip after a restart",
+        )
+
+    def test_dedup_still_works_with_arrival_time_stamps(self):
+        # Sips are now stamped on arrival rather than backdated by a bogus fixed
+        # 117 s, so the re-notify vector the dedup window exists for is a repeat
+        # within a couple of seconds.
+        b = new_bottle()
+        ts = local_ts(2026, 6, 18, 11, 59)
+        self.assertTrue(b.add_sip(Sip(timestamp=ts, volume_ml=100)))
+        self.assertFalse(
+            b.add_sip(Sip(timestamp=ts + 2, volume_ml=100)),
+            "the same record re-notified moments later is a duplicate",
+        )
+        self.assertEqual(b.lifetime_total_ml, 100)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

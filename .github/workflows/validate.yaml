@@ -25,3 +25,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: home-assistant/actions/hassfest@master
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    name: Unit Tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # The tests stub the Home Assistant and bleak surfaces themselves, so they
+      # need no dependencies. Each file is a standalone unittest module.
+      - name: Run tests
+        run: |
+          for f in tests/test_*.py; do
+            echo "::group::$f"
+            python3 "$f" || exit 1
+            echo "::endgroup::"
+          done

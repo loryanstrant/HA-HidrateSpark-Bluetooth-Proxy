@@ -23,6 +23,7 @@ from .const import (
     RAW_UNITS_PER_ML,
     SIP_DEDUP_TIMESTAMP_TOLERANCE_S,
     SIP_DEDUP_WINDOW,
+    SIP_FILL_SLACK_FRACTION,
     STORAGE_KEY_PREFIX,
     STORAGE_VERSION,
 )
@@ -36,12 +37,18 @@ class Sip:
 
     timestamp: float  # unix seconds
     volume_ml: int
+    # A sip that failed a plausibility check. It is still kept in the dedup
+    # window — and persisted there — so that when the bottle re-sends the same
+    # record we recognise it instead of counting it as new. It contributes
+    # nothing to any total and never becomes `last_sip`.
+    rejected: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "iso": datetime.fromtimestamp(self.timestamp, tz=timezone.utc).isoformat(),
             "timestamp": self.timestamp,
             "volume_ml": self.volume_ml,
+            "rejected": self.rejected,
         }
 
 
@@ -103,12 +110,19 @@ class BottleState:
         for raw in data.get("recent_sips") or []:
             try:
                 self.sips.append(
-                    Sip(timestamp=float(raw["timestamp"]), volume_ml=int(raw["volume_ml"]))
+                    Sip(
+                        timestamp=float(raw["timestamp"]),
+                        volume_ml=int(raw["volume_ml"]),
+                        rejected=bool(raw.get("rejected", False)),
+                    )
                 )
             except (KeyError, TypeError, ValueError):
                 continue
-        if self.sips:
-            self.last_sip = max(self.sips, key=lambda s: s.timestamp)
+        # Rejected sips are in the window purely to be recognised on replay, so
+        # a phantom must not resurface as 'last sip' after a restart.
+        counted = [s for s in self.sips if not s.rejected]
+        if counted:
+            self.last_sip = max(counted, key=lambda s: s.timestamp)
             self.last_seen = self.last_sip.timestamp
 
     async def async_save(self) -> None:
@@ -126,7 +140,11 @@ class BottleState:
                 # Persist the dedup window so replays after a restart are
                 # recognised as duplicates rather than re-counted.
                 "recent_sips": [
-                    {"timestamp": s.timestamp, "volume_ml": s.volume_ml}
+                    {
+                        "timestamp": s.timestamp,
+                        "volume_ml": s.volume_ml,
+                        "rejected": s.rejected,
+                    }
                     for s in list(self.sips)[-SIP_DEDUP_WINDOW:]
                 ],
             }
@@ -230,8 +248,14 @@ class BottleState:
             return True
         return False
 
-    def add_sip(self, sip: Sip) -> bool:
-        """Append a sip if it isn't a duplicate. Returns True if accepted."""
+    def add_sip(self, sip: Sip, rejected: bool = False) -> bool:
+        """Append a sip if it isn't a duplicate. Returns True if it was counted.
+
+        `rejected` marks a frame the BLE layer already found implausible. A
+        rejected sip is still recorded in the dedup window, so the caller should
+        persist whenever `sip.rejected` ends up True even though this returns
+        False — see the note on the rejection branch below.
+        """
         # Dedup against last N sips: same volume within ±2 s timestamp.
         for existing in list(self.sips)[-SIP_DEDUP_WINDOW:]:
             if (
@@ -240,6 +264,39 @@ class BottleState:
                 and existing.volume_ml == sip.volume_ml
             ):
                 return False
+
+        # A sip cannot be bigger than the water that was in the bottle. Without a
+        # weight anchor that condition means "refilled out of band" and is handled
+        # below; with an anchor we know the fill directly, so it means the frame
+        # was corrupt and must not reach any counter.
+        #
+        # The slack is there because `current_fill_ml` lags an out-of-band refill
+        # by a weight reading or two, and dropping a genuine post-refill sip would
+        # be worse than letting a marginal one through. This guard is the weakest
+        # of the set — the frame-level checks in ble.py are what actually catch a
+        # corrupt frame — so widen the slack rather than tighten it if field
+        # reports show real sips being dropped.
+        if not rejected and self.weight_full_raw is not None:
+            slack_ml = self.bottle_size_ml * SIP_FILL_SLACK_FRACTION
+            if sip.volume_ml > self.current_fill_ml + slack_ml:
+                _LOGGER.warning(
+                    "rejecting %dml sip: bottle only held %dml (+%dml slack)",
+                    sip.volume_ml,
+                    self.current_fill_ml,
+                    round(slack_ml),
+                )
+                rejected = True
+
+        # A rejected sip is still appended to the dedup window, and persisted
+        # there, so the bottle's next drain recognises the record instead of
+        # replaying it as new. Backing a phantom out of the totals while dropping
+        # it from the window would leave the correction silently undone on the
+        # next reconnect. It contributes to nothing else: no total, no count, and
+        # it never becomes `last_sip`.
+        if rejected:
+            sip.rejected = True
+            self.sips.append(sip)
+            return False
 
         # Day rollover is keyed on wall-clock *now* (in HA's configured local
         # timezone), never on the sip's own timestamp. Buffered sips replayed

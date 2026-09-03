@@ -50,6 +50,24 @@ DRAIN_BYTE: Final = bytes([0x57])
 # consecutive identical frames to avoid an unbounded write loop.
 MAX_IDENTICAL_SIP_FRAMES: Final = 5
 
+# Sip-frame plausibility guards. On 2026-09-03 a corrupt frame reported pct=100
+# and was accepted as a 621 mL drink, poisoning the daily and lifetime totals
+# even though no water had left the bottle. See _on_data_notify for the frame
+# layout these guards are derived from.
+#
+# A single sip claiming this much of the bottle's capacity is not a drink, it is
+# a bad byte. The largest genuine sip in the logged corpus is 47%.
+MAX_SIP_PCT: Final = 100
+# Each frame carries the bottle's own raw weight before and after the sip, so a
+# frame can be checked against itself. Reject when the claimed volume exceeds
+# this multiple of what the frame's own weight delta supports. Across the logged
+# corpus every genuine frame sits at <= 0.85x, and the corrupt one at ~26x, so
+# there is roughly 3.5x of margin before a real sip is ever at risk.
+SIP_WEIGHT_CHECK_HEADROOM: Final = 3.0
+# Allowance, as a fraction of bottle capacity, for `current_fill_ml` lagging an
+# out-of-band refill before we call a sip "more water than the bottle held".
+SIP_FILL_SLACK_FRACTION: Final = 0.1
+
 # Weight encoding.
 # The weight characteristic streams a 16-bit big-endian value (high<<8 | low).
 # Earlier firmwares were assumed to put an orientation flag in the high byte and

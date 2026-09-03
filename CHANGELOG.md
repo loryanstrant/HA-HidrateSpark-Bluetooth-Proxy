@@ -1,5 +1,31 @@
 # Changelog
 
+## What's new in v0.2.1
+A corrupt Bluetooth frame could be recorded as an enormous drink you never took — one bottle
+logged a phantom 621 mL at one in the morning, which then sat in the daily and lifetime
+totals. This release teaches the integration to spot frames that can't describe a real drink
+and throw them away. Decoding the frames properly to do that also turned up the reason
+"last sip" time had always looked about two minutes late.
+
+### Fixed
+- **Impossible drinks are no longer counted.** A sip is now rejected if it claims the whole
+  bottle in one go, if the bottle's running sip counter jumps backwards in a way a daily
+  reset can't explain, or if the frame's own before-and-after weight readings show that far
+  less water actually left the bottle. Rejected frames are logged as a warning with their raw
+  data and never reach your daily total, sip count or lifetime total.
+- **"Last sip" time is no longer about two minutes late.** Every sip was being backdated by a
+  fixed 1 minute 57 seconds, because a value that isn't a timestamp was being read as one.
+  Sips are now recorded when they arrive.
+- **The bottle's running total is decoded correctly**, so the diagnostic logs show sensible
+  numbers instead of values in the tens of thousands.
+
+### Upgrade notes
+- No action needed.
+- New sips will be timestamped up to about two minutes later than you're used to seeing. That
+  is the fix, not a regression — the old times were wrong.
+- Totals already recorded are not recalculated. If a phantom drink is sitting in your history,
+  it stays there; this release stops new ones appearing.
+
 ## What's new in v0.2.0
 Legacy-firmware (e.g. 32oz) bottles now report weight/fill, plus several sip-accuracy
 and resilience fixes. Big thanks to **[Huw Davies (@hadavies)](https://github.com/hadavies)**,

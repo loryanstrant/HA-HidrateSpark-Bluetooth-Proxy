@@ -1,0 +1,716 @@
+{
+  "schema_version": "1.0",
+  "repository": "HA-HidrateSpark-Bluetooth-Proxy",
+  "identity": {
+    "description": "A native Home Assistant integration for HidrateSpark smart water bottles.",
+    "default_branch": "main",
+    "languages": {
+      "Python": 14
+    },
+    "topics": [],
+    "licence": "MIT License",
+    "file_count": 27
+  },
+  "start_here": {
+    "readme": "README.md",
+    "agents_md": "AGENTS.md",
+    "entry_points": [],
+    "decision_records": [],
+    "build_config": [
+      "custom_components/hidratespark_bluetooth_proxy/manifest.json",
+      "hacs.json"
+    ],
+    "source_roots": [
+      "custom_components"
+    ]
+  },
+  "documentation": [
+    {
+      "path": ".github/copilot-instructions.md",
+      "title": "Copilot instructions — HA-HidrateSpark-Bluetooth-Proxy",
+      "lines": 34,
+      "headings": [
+        {
+          "level": 2,
+          "text": "What this repo is",
+          "anchor": "what-this-repo-is"
+        },
+        {
+          "level": 2,
+          "text": "Repo shape",
+          "anchor": "repo-shape"
+        },
+        {
+          "level": 2,
+          "text": "Conventions",
+          "anchor": "conventions"
+        },
+        {
+          "level": 2,
+          "text": "Never",
+          "anchor": "never"
+        }
+      ]
+    },
+    {
+      "path": "CHANGELOG.md",
+      "title": "Changelog",
+      "lines": 57,
+      "headings": [
+        {
+          "level": 2,
+          "text": "What's new in v0.2.1",
+          "anchor": "whats-new-in-v021"
+        },
+        {
+          "level": 3,
+          "text": "Fixed",
+          "anchor": "fixed"
+        },
+        {
+          "level": 3,
+          "text": "Upgrade notes",
+          "anchor": "upgrade-notes"
+        },
+        {
+          "level": 2,
+          "text": "What's new in v0.2.0",
+          "anchor": "whats-new-in-v020"
+        },
+        {
+          "level": 3,
+          "text": "Added",
+          "anchor": "added"
+        },
+        {
+          "level": 3,
+          "text": "Fixed",
+          "anchor": "fixed-1"
+        },
+        {
+          "level": 3,
+          "text": "Upgrade notes",
+          "anchor": "upgrade-notes-1"
+        }
+      ]
+    },
+    {
+      "path": "README.md",
+      "title": "HidrateSpark — Home Assistant integration",
+      "lines": 128,
+      "headings": [
+        {
+          "level": 2,
+          "text": "Why this exists",
+          "anchor": "why-this-exists"
+        },
+        {
+          "level": 2,
+          "text": "Features",
+          "anchor": "features"
+        },
+        {
+          "level": 2,
+          "text": "Requirements",
+          "anchor": "requirements"
+        },
+        {
+          "level": 2,
+          "text": "Install",
+          "anchor": "install"
+        },
+        {
+          "level": 3,
+          "text": "HACS (recommended)",
+          "anchor": "hacs-recommended"
+        },
+        {
+          "level": 3,
+          "text": "Manual",
+          "anchor": "manual"
+        },
+        {
+          "level": 2,
+          "text": "Setup",
+          "anchor": "setup"
+        },
+        {
+          "level": 2,
+          "text": "Coexisting with the phone app",
+          "anchor": "coexisting-with-the-phone-app"
+        },
+        {
+          "level": 2,
+          "text": "Entities",
+          "anchor": "entities"
+        },
+        {
+          "level": 2,
+          "text": "What survives a disconnect",
+          "anchor": "what-survives-a-disconnect"
+        },
+        {
+          "level": 2,
+          "text": "Acknowledgements",
+          "anchor": "acknowledgements"
+        },
+        {
+          "level": 2,
+          "text": "License",
+          "anchor": "license"
+        }
+      ]
+    },
+    {
+      "path": "info.md",
+      "title": "HidrateSpark for Home Assistant",
+      "lines": 22,
+      "headings": [
+        {
+          "level": 2,
+          "text": "Features",
+          "anchor": "features"
+        }
+      ]
+    }
+  ],
+  "code": {
+    "source_roots": [
+      "custom_components"
+    ],
+    "symbol_source": "repomix (tree-sitter signatures)",
+    "routes": [],
+    "files": [
+      {
+        "path": "custom_components/hidratespark_bluetooth_proxy/__init__.py",
+        "symbols": [
+          {
+            "kind": "const",
+            "name": "PLATFORMS",
+            "parent": "",
+            "signature": "PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]"
+          },
+          {
+            "kind": "function",
+            "name": "async_setup_entry",
+            "parent": "",
+            "signature": "async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool"
+          },
+          {
+            "kind": "function",
+            "name": "async_unload_entry",
+            "parent": "",
+            "signature": "async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool"
+          }
+        ]
+      },
+      {
+        "path": "custom_components/hidratespark_bluetooth_proxy/binary_sensor.py",
+        "symbols": [
+          {
+            "kind": "const",
+            "name": "BINARY_SENSORS",
+            "parent": "",
+            "signature": "BINARY_SENSORS: tuple[BinarySensorEntityDescription, ...] = ("
+          },
+          {
+            "kind": "class",
+            "name": "HidrateSparkBinarySensor",
+            "parent": "",
+            "signature": "class HidrateSparkBinarySensor(HidrateSparkEntity, BinarySensorEntity)"
+          },
+          {
+            "kind": "function",
+            "name": "is_on",
+            "parent": "HidrateSparkBinarySensor",
+            "signature": "is_on(self) -> bool"
+          },
+          {
+            "kind": "function",
+            "name": "available",
+            "parent": "HidrateSparkBinarySensor",
+            "signature": "available(self) -> bool"
+          }
+        ]
+      },
+      {
+        "path": "custom_components/hidratespark_bluetooth_proxy/ble.py",
+        "symbols": [
+          {
+            "kind": "class",
+            "name": "BottleClient",
+            "parent": "",
+            "signature": "class BottleClient"
+          },
+          {
+            "kind": "function",
+            "name": "connected",
+            "parent": "BottleClient",
+            "signature": "connected(self) -> bool"
+          },
+          {
+            "kind": "function",
+            "name": "handshake_path",
+            "parent": "BottleClient",
+            "signature": "handshake_path(self) -> Optional[str]"
+          },
+          {
+            "kind": "function",
+            "name": "request_force_sync",
+            "parent": "BottleClient",
+            "signature": "request_force_sync(self) -> None"
+          },
+          {
+            "kind": "function",
+            "name": "stop",
+            "parent": "BottleClient",
+            "signature": "stop(self) -> None"
+          },
+          {
+            "kind": "function",
+            "name": "run",
+            "parent": "BottleClient",
+            "signature": "run(self) -> None"
+          }
+        ]
+      },
+      {
+        "path": "custom_components/hidratespark_bluetooth_proxy/config_flow.py",
+        "symbols": [
+          {
+            "kind": "class",
+            "name": "HidrateSparkConfigFlow",
+            "parent": "",
+            "signature": "class HidrateSparkConfigFlow(ConfigFlow, domain=DOMAIN)"
+          },
+          {
+            "kind": "function",
+            "name": "async_get_options_flow",
+            "parent": "HidrateSparkConfigFlow",
+            "signature": "async_get_options_flow(config_entry) -> OptionsFlow"
+          },
+          {
+            "kind": "class",
+            "name": "HidrateSparkOptionsFlow",
+            "parent": "",
+            "signature": "class HidrateSparkOptionsFlow(OptionsFlow)"
+          }
+        ]
+      },
+      {
+        "path": "custom_components/hidratespark_bluetooth_proxy/const.py",
+        "symbols": [
+          {
+            "kind": "const",
+            "name": "DOMAIN",
+            "parent": "",
+            "signature": "DOMAIN: Final = \"hidratespark_bluetooth_proxy\""
+          },
+          {
+            "kind": "const",
+            "name": "CONF_ADDRESS",
+            "parent": "",
+            "signature": "CONF_ADDRESS: Final = \"address\""
+          },
+          {
+            "kind": "const",
+            "name": "CONF_SIZE_ML",
+            "parent": "",
+            "signature": "CONF_SIZE_ML: Final = \"size_ml\""
+          },
+          {
+            "kind": "const",
+            "name": "CONF_NAME_PREFIX",
+            "parent": "",
+            "signature": "CONF_NAME_PREFIX: Final = \"name_prefix\""
+          },
+          {
+            "kind": "const",
+            "name": "DEFAULT_SIZE_ML",
+            "parent": "",
+            "signature": "DEFAULT_SIZE_ML: Final = 591"
+          },
+          {
+            "kind": "const",
+            "name": "DEFAULT_NAME_PREFIX",
+            "parent": "",
+            "signature": "DEFAULT_NAME_PREFIX: Final = \"h2o\""
+          },
+          {
+            "kind": "const",
+            "name": "RECONNECT_BACKOFF_INITIAL",
+            "parent": "",
+            "signature": "RECONNECT_BACKOFF_INITIAL: Final = 1.0"
+          },
+          {
+            "kind": "const",
+            "name": "RECONNECT_BACKOFF_MAX",
+            "parent": "",
+            "signature": "RECONNECT_BACKOFF_MAX: Final = 60.0"
+          },
+          {
+            "kind": "const",
+            "name": "REFILL_SETTLE_TIMEOUT_S",
+            "parent": "",
+            "signature": "REFILL_SETTLE_TIMEOUT_S: Final = 30.0"
+          },
+          {
+            "kind": "const",
+            "name": "REFILL_STABLE_SAMPLES",
+            "parent": "",
+            "signature": "REFILL_STABLE_SAMPLES: Final = 3  # consecutive steady samples = \"settled\""
+          },
+          {
+            "kind": "const",
+            "name": "SERVICE_USER",
+            "parent": "",
+            "signature": "SERVICE_USER: Final = \"bf2d1ba0-c473-49f2-9571-0ce69036c642\""
+          },
+          {
+            "kind": "const",
+            "name": "SERVICE_REF",
+            "parent": "",
+            "signature": "SERVICE_REF: Final = \"45855422-6565-4cd7-a2a9-fe8af41b85e8\""
+          },
+          {
+            "kind": "const",
+            "name": "CHAR_USER_DATA",
+            "parent": "",
+            "signature": "CHAR_USER_DATA: Final = \"bf2d1ba1-c473-49f2-9571-0ce69036c642\""
+          },
+          {
+            "kind": "const",
+            "name": "CHAR_SET_POINT",
+            "parent": "",
+            "signature": "CHAR_SET_POINT: Final = \"b44b03f0-b850-4090-86eb-72863fb3618d\""
+          },
+          {
+            "kind": "const",
+            "name": "CHAR_DEBUG",
+            "parent": "",
+            "signature": "CHAR_DEBUG: Final = \"e3578b0d-caa7-46d6-b7c2-7331c08de044\""
+          },
+          {
+            "kind": "const",
+            "name": "CHAR_DATA_POINT",
+            "parent": "",
+            "signature": "CHAR_DATA_POINT: Final = \"016e11b1-6c8a-4074-9e5a-076053f93784\""
+          },
+          {
+            "kind": "const",
+            "name": "CHAR_BATTERY_LEVEL",
+            "parent": "",
+            "signature": "CHAR_BATTERY_LEVEL: Final = \"00002a19-0000-1000-8000-00805f9b34fb\""
+          },
+          {
+            "kind": "const",
+            "name": "CHAR_WEIGHT",
+            "parent": "",
+            "signature": "CHAR_WEIGHT: Final = \"1807a063-4e2d-4636-981a-35e93d1c7b94\""
+          },
+          {
+            "kind": "const",
+            "name": "CHAR_CAP",
+            "parent": "",
+            "signature": "CHAR_CAP: Final = CHAR_DEBUG"
+          },
+          {
+            "kind": "const",
+            "name": "DRAIN_BYTE",
+            "parent": "",
+            "signature": "DRAIN_BYTE: Final = bytes([0x57])"
+          },
+          {
+            "kind": "const",
+            "name": "MAX_IDENTICAL_SIP_FRAMES",
+            "parent": "",
+            "signature": "MAX_IDENTICAL_SIP_FRAMES: Final = 5"
+          },
+          {
+            "kind": "const",
+            "name": "MAX_SIP_PCT",
+            "parent": "",
+            "signature": "MAX_SIP_PCT: Final = 100"
+          },
+          {
+            "kind": "const",
+            "name": "SIP_WEIGHT_CHECK_HEADROOM",
+            "parent": "",
+            "signature": "SIP_WEIGHT_CHECK_HEADROOM: Final = 3.0"
+          },
+          {
+            "kind": "const",
+            "name": "SIP_FILL_SLACK_FRACTION",
+            "parent": "",
+            "signature": "SIP_FILL_SLACK_FRACTION: Final = 0.1"
+          },
+          {
+            "kind": "const",
+            "name": "RAW_STABLE_TOLERANCE",
+            "parent": "",
+            "signature": "RAW_STABLE_TOLERANCE: Final = 4  # u16 units; settled jitter is ~±1-2"
+          },
+          {
+            "kind": "const",
+            "name": "RAW_UNITS_PER_ML",
+            "parent": "",
+            "signature": "RAW_UNITS_PER_ML: Final = 1.305"
+          },
+          {
+            "kind": "const",
+            "name": "REFILL_MIN_DELTA_RAW",
+            "parent": "",
+            "signature": "REFILL_MIN_DELTA_RAW: Final = 60"
+          },
+          {
+            "kind": "const",
+            "name": "HANDSHAKE_COMMANDS",
+            "parent": "",
+            "signature": "HANDSHAKE_COMMANDS: Final[list[tuple[str, str]]] = ["
+          },
+          {
+            "kind": "const",
+            "name": "HANDSHAKE_INTERVAL_S",
+            "parent": "",
+            "signature": "HANDSHAKE_INTERVAL_S: Final = 0.05"
+          },
+          {
+            "kind": "const",
+            "name": "SIP_DEDUP_WINDOW",
+            "parent": "",
+            "signature": "SIP_DEDUP_WINDOW: Final = 50  # check against last N sips"
+          },
+          {
+            "kind": "const",
+            "name": "SIP_DEDUP_TIMESTAMP_TOLERANCE_S",
+            "parent": "",
+            "signature": "SIP_DEDUP_TIMESTAMP_TOLERANCE_S: Final = 5"
+          },
+          {
+            "kind": "const",
+            "name": "STORAGE_VERSION",
+            "parent": "",
+            "signature": "STORAGE_VERSION: Final = 1"
+          },
+          {
+            "kind": "const",
+            "name": "STORAGE_KEY_PREFIX",
+            "parent": "",
+            "signature": "STORAGE_KEY_PREFIX: Final = \"hidratespark\""
+          }
+        ]
+      },
+      {
+        "path": "custom_components/hidratespark_bluetooth_proxy/coordinator.py",
+        "symbols": [
+          {
+            "kind": "const",
+            "name": "SIGNAL_UPDATE",
+            "parent": "",
+            "signature": "SIGNAL_UPDATE = f\"{DOMAIN}_update_{{entry_id}}\""
+          },
+          {
+            "kind": "class",
+            "name": "HidrateSparkCoordinator",
+            "parent": "",
+            "signature": "class HidrateSparkCoordinator"
+          },
+          {
+            "kind": "function",
+            "name": "signal",
+            "parent": "HidrateSparkCoordinator",
+            "signature": "signal(self) -> str"
+          },
+          {
+            "kind": "function",
+            "name": "battery_pct",
+            "parent": "HidrateSparkCoordinator",
+            "signature": "battery_pct(self) -> Optional[int]"
+          },
+          {
+            "kind": "function",
+            "name": "connected",
+            "parent": "HidrateSparkCoordinator",
+            "signature": "connected(self) -> bool"
+          },
+          {
+            "kind": "function",
+            "name": "async_start",
+            "parent": "HidrateSparkCoordinator",
+            "signature": "async_start(self) -> None"
+          },
+          {
+            "kind": "function",
+            "name": "async_stop",
+            "parent": "HidrateSparkCoordinator",
+            "signature": "async_stop(self) -> None"
+          },
+          {
+            "kind": "function",
+            "name": "request_force_sync",
+            "parent": "HidrateSparkCoordinator",
+            "signature": "request_force_sync(self) -> None"
+          }
+        ]
+      },
+      {
+        "path": "custom_components/hidratespark_bluetooth_proxy/entity.py",
+        "symbols": [
+          {
+            "kind": "class",
+            "name": "HidrateSparkEntity",
+            "parent": "",
+            "signature": "class HidrateSparkEntity(Entity)"
+          },
+          {
+            "kind": "function",
+            "name": "async_added_to_hass",
+            "parent": "HidrateSparkEntity",
+            "signature": "async_added_to_hass(self) -> None"
+          },
+          {
+            "kind": "function",
+            "name": "available",
+            "parent": "HidrateSparkEntity",
+            "signature": "available(self) -> bool"
+          }
+        ]
+      },
+      {
+        "path": "custom_components/hidratespark_bluetooth_proxy/sensor.py",
+        "symbols": [
+          {
+            "kind": "const",
+            "name": "SENSORS",
+            "parent": "",
+            "signature": "SENSORS: tuple[SensorEntityDescription, ...] = ("
+          },
+          {
+            "kind": "class",
+            "name": "HidrateSparkSensor",
+            "parent": "",
+            "signature": "class HidrateSparkSensor(HidrateSparkEntity, SensorEntity)"
+          },
+          {
+            "kind": "function",
+            "name": "native_value",
+            "parent": "HidrateSparkSensor",
+            "signature": "native_value(self) -> Any"
+          },
+          {
+            "kind": "function",
+            "name": "available",
+            "parent": "HidrateSparkSensor",
+            "signature": "available(self) -> bool"
+          }
+        ]
+      },
+      {
+        "path": "custom_components/hidratespark_bluetooth_proxy/state.py",
+        "symbols": [
+          {
+            "kind": "class",
+            "name": "Sip",
+            "parent": "",
+            "signature": "class Sip"
+          },
+          {
+            "kind": "function",
+            "name": "to_dict",
+            "parent": "Sip",
+            "signature": "to_dict(self) -> dict[str, Any]"
+          },
+          {
+            "kind": "class",
+            "name": "BottleState",
+            "parent": "",
+            "signature": "class BottleState"
+          },
+          {
+            "kind": "function",
+            "name": "async_load",
+            "parent": "BottleState",
+            "signature": "async_load(self) -> None"
+          },
+          {
+            "kind": "function",
+            "name": "async_save",
+            "parent": "BottleState",
+            "signature": "async_save(self) -> None"
+          },
+          {
+            "kind": "function",
+            "name": "set_bottle_size",
+            "parent": "BottleState",
+            "signature": "set_bottle_size(self, size_ml: int) -> None"
+          },
+          {
+            "kind": "function",
+            "name": "refill",
+            "parent": "BottleState",
+            "signature": "refill(self, source: str, weight_full_raw: Optional[int]) -> None"
+          },
+          {
+            "kind": "function",
+            "name": "update_fill_from_weight",
+            "parent": "BottleState",
+            "signature": "update_fill_from_weight(self, raw: int) -> bool"
+          },
+          {
+            "kind": "function",
+            "name": "add_sip",
+            "parent": "BottleState",
+            "signature": "add_sip(self, sip: Sip, rejected: bool = False) -> bool"
+          },
+          {
+            "kind": "function",
+            "name": "total_today_ml",
+            "parent": "BottleState",
+            "signature": "total_today_ml(self) -> int"
+          },
+          {
+            "kind": "function",
+            "name": "sips_today",
+            "parent": "BottleState",
+            "signature": "sips_today(self) -> int"
+          },
+          {
+            "kind": "function",
+            "name": "refills_today",
+            "parent": "BottleState",
+            "signature": "refills_today(self) -> int"
+          },
+          {
+            "kind": "function",
+            "name": "current_fill_pct",
+            "parent": "BottleState",
+            "signature": "current_fill_pct(self) -> int"
+          }
+        ]
+      }
+    ]
+  },
+  "tests": [
+    "tests/ha_stub.py",
+    "tests/test_day_rollover.py",
+    "tests/test_sip_dedup.py",
+    "tests/test_sip_redrain.py",
+    "tests/test_weight.py"
+  ],
+  "operations": [
+    ".github/workflows/release.yaml",
+    ".github/workflows/validate.yaml"
+  ],
+  "limitations": {
+    "unparsed_languages": [],
+    "excluded_dirs": [],
+    "code_map_truncated": false,
+    "code_map_symbols_capped": true,
+    "tracked_files_only": true
+  },
+  "generated": {
+    "source_commit": "7a82c14cdf640784ed8c8b50086e043bd6ef68c0",
+    "content_hash": "e9d49a6fe497989a",
+    "generator": "navgen"
+  }
+}

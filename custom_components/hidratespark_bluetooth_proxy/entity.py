@@ -19,10 +19,13 @@ class HidrateSparkEntity(Entity):
 
     def __init__(self, coordinator: HidrateSparkCoordinator, key: str) -> None:
         self._coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.address}_{key}"
+        # Keyed on the fixed device key, never the live address, so a bottle
+        # that rotates its BLE address keeps its device and entities (#10).
+        key_base = coordinator.device_key
+        self._attr_unique_id = f"{key_base}_{key}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.address)},
-            connections={(CONNECTION_BLUETOOTH, coordinator.address)},
+            identifiers={(DOMAIN, key_base)},
+            connections={(CONNECTION_BLUETOOTH, key_base)},
             name=coordinator.name or "HidrateSpark",
             manufacturer="HidrateSpark",
             model="Smart Water Bottle",

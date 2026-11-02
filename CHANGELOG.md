@@ -1,5 +1,50 @@
 # Changelog
 
+## What's new in v0.3.0
+HidrateSpark PRO 2 support, and fixes for every open issue.
+
+### Added
+- **HidrateSpark PRO 2 support.** The PRO 2 changes its Bluetooth address every so often
+  and drops quiet connections, which used to leave its device permanently "disconnected"
+  ([#10](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues/10)). Bottles
+  are now identified by their advertised name (e.g. `h2o00003158`), and the integration
+  follows the bottle to its new address without a reload or a duplicate device. Bottles
+  that only advertise the newer data service are discovered too.
+- **Connection keepalive.** While connected the bottle is checked once a minute, and a
+  connection that has stopped answering, or sent nothing for 30 minutes, is rebuilt with
+  a fresh handshake. This should also help bottles that "just stop sending data".
+- **Model and firmware on the device page**, read from the bottle's Device Information
+  service where it has one.
+- **Fill and refills from the sip records themselves**
+  ([#11](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues/11)). Every
+  sip record carries the bottle's own weight before and after the sip. Current fill now
+  follows that, and a jump between one sip's "after" and the next sip's "before" counts as
+  a refill. That catches refills the cap sensor missed, including ones made away from
+  home and on bottles that don't report cap events reliably
+  ([#5](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues/5)).
+- **Per-bottle weight scale.** The raw-weight-per-mL figure differs between bottles (about
+  1.31 on a 32oz, about 1.59 on a 21oz PRO), so it is now learned from your sips instead
+  of assumed. Until about 250 mL of sips has been seen, the old figure is used.
+
+### Fixed
+- **Options ("Configure") no longer crashes** with `TypeError: HidrateSparkOptionsFlow()
+  takes no arguments` on Home Assistant 2024.12 and later
+  ([#9](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues/9)).
+- **No more duplicate devices after an address change**
+  ([#10](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues/10)).
+- The integration no longer reloads every time its own stored data is updated; only a
+  change of bottle size reloads it.
+
+### Upgrade notes
+- Requires Home Assistant 2024.12 or later (already the HACS minimum).
+- Existing bottles are migrated automatically and keep their device, entities and
+  history. If an address rotation already created a duplicate "ghost" bottle, delete the
+  one that is permanently unavailable after upgrading.
+- The daily-zeroing and "last sip 8 years ago" reports in
+  [#4](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues/4) were fixed
+  in v0.2.0 (rollover keyed on the wall clock) and v0.2.1 (sips stamped on arrival). The
+  reconnect fixes in this release cover the "stops reconnecting" part.
+
 ## What's new in v0.2.1
 A corrupt Bluetooth frame could be recorded as an enormous drink you never took — one bottle
 logged a phantom 621 mL at one in the morning, which then sat in the daily and lifetime

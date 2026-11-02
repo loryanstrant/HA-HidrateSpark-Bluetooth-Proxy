@@ -37,17 +37,32 @@ works with a directly-attached USB or onboard adapter.
 - 🔋 Battery percentage
 - 💧 Per-sip events with timestamps and dedup (within ±2 s / same volume)
 - 📊 Daily total (rolls at local midnight) and lifetime total
-- 🚰 Auto-refill detection (cap-open/close + weight delta ≥ 25 mL)
-- ⚖️ Live fill level from the on-bottle weight sensor (auto-calibrated)
+- 🚰 Auto-refill detection (cap-open/close + weight delta ≥ 25 mL), plus
+  refills spotted from the sip frames themselves when the cap event was missed
+- ⚖️ Live fill level from the on-bottle weight sensor (auto-calibrated, with a
+  per-bottle weight scale learned from your sips)
+- 🔀 Follows bottles that rotate their Bluetooth address (PRO 2) without
+  creating duplicate devices
 - 🛟 Sip-exceeds-fill fallback when no weight anchor exists yet
 - 🔁 State persists across HA restarts via the Store API
 - 📥 Buffered sips replay on reconnect with their original timestamps
 
-**NOTE:** This has only been tested on a HidrateSpark PRO (v1) 21oz / 621ml with chug lid.
+## Supported bottles
+
+| Bottle | Status |
+|---|---|
+| HidrateSpark PRO (v1) 21oz / 621 mL | Tested by the maintainer |
+| HidrateSpark Steel / PRO 32oz (legacy firmware) | Tested by contributors |
+| HidrateSpark PRO 2 | Supported since v0.3.0: rotating address handling, characteristic auto-detection and connection keepalive. Not yet verified on hardware by the maintainer — please report back |
+
+If your bottle connects but no sips arrive, enable debug logging for
+`custom_components.hidratespark_bluetooth_proxy` and attach the `GATT service`
+lines and the `bottle reports {...}` line to an issue. They show exactly which
+characteristics and firmware your bottle has.
 
 ## Requirements
 
-- Home Assistant 2024.4 or later
+- Home Assistant 2024.12 or later
 - The `bluetooth` integration set up (it's the default on HAOS)
 - Either a local Bluetooth adapter on the HA host **or** an ESPHome
   Bluetooth proxy within range of the bottle
@@ -59,14 +74,14 @@ works with a directly-attached USB or onboard adapter.
 ### HACS (recommended)
 
 1. HACS → ⋮ → **Custom repositories**
-2. Add `https://github.com/loryanstrant/HidrateSpark-HA-Integration` as an
+2. Add `https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy` as an
    **Integration**
-3. Install **HidrateSpark**, restart HA
-4. **Settings → Devices & Services → Add Integration → HidrateSpark**
+3. Install **HidrateSpark Bluetooth Proxy**, restart HA
+4. **Settings → Devices & Services → Add Integration → HidrateSpark Bluetooth Proxy**
 
 ### Manual
 
-Copy `custom_components/hidratespark/` into your HA `config/custom_components/`
+Copy `custom_components/hidratespark_bluetooth_proxy/` into your HA `config/custom_components/`
 folder, restart HA, then add the integration from **Devices & Services**.
 
 ## Setup

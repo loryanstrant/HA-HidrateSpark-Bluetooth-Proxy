@@ -93,6 +93,21 @@ async def test_options_flow_uses_real_injected_entry(hass):
     assert config.options["size_ml"] == 946
 
 
+async def test_options_setup_does_not_use_runner_hardware(hass):
+    """Keep real HA flows working on a Linux runner with no USB/BLE access."""
+    config = entry(hass)
+    with (
+        patch("homeassistant.components.usb.system_info.async_get_system_info",
+              new=AsyncMock(return_value={"docker": False})),
+        patch("btsocket.btmgmt_socket.open",
+              side_effect=AssertionError("real Bluetooth socket attempted")) as socket,
+    ):
+        result = await hass.config_entries.options.async_init(config.entry_id)
+    assert result["type"] == "form"
+    assert result["step_id"] == "init"
+    socket.assert_not_called()
+
+
 async def test_rediscovery_updates_address_without_reload(hass):
     config = entry(hass)
     assert await async_migrate_entry(hass, config)

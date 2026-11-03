@@ -80,6 +80,23 @@ class BluetoothDiscoveryTest(unittest.TestCase):
         self.assertEqual(result["data"]["address"], NEW)
 
 
+class DuplicateAddressTest(unittest.TestCase):
+    def test_manual_address_does_not_duplicate_a_name_keyed_entry(self):
+        flow = config_flow.HidrateSparkConfigFlow()
+        flow.current_entries = [stub.ConfigEntry(
+            unique_id=NAME, data={"address": OLD, const.CONF_DEVICE_KEY: OLD})]
+        result = asyncio.run(flow.async_step_user({"address": OLD, "size_ml": 621}))
+        self.assertEqual(result["type"], "abort")
+        self.assertEqual(result["reason"], "already_configured")
+
+    def test_named_discovery_does_not_duplicate_address_only_entry(self):
+        flow = config_flow.HidrateSparkConfigFlow()
+        flow.current_entries = [stub.ConfigEntry(unique_id=OLD, data={"address": OLD})]
+        result = asyncio.run(flow.async_step_bluetooth(
+            stub.ServiceInfo(NAME, OLD, service_uuids=[const.SERVICE_REF])))
+        self.assertEqual(result["reason"], "already_configured")
+
+
 class MigrationTest(unittest.TestCase):
     def _migrate(self, entry, others=()):
         hass = stub.FakeHass()

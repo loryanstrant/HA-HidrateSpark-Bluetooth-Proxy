@@ -286,6 +286,7 @@ class BottleClient:
         # half-succeeded).
         self._handshake_path = None
         self._data_char = None
+        self._device_info_read = False
         # Battery: read once, then subscribe for change notifications.
         try:
             data = await client.read_gatt_char(CHAR_BATTERY_LEVEL)
@@ -417,7 +418,7 @@ class BottleClient:
             _LOGGER.debug("clearing service cache failed: %s", err)
 
     async def _read_device_info(self, client: BleakClient) -> None:
-        """Read model/firmware once per run from the Device Information service."""
+        """Read model/firmware once per connection, retrying transient failures."""
         if self._device_info_read or self._on_device_info is None:
             return
         info: dict[str, str] = {}

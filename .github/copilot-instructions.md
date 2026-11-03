@@ -24,8 +24,9 @@ Coordinator-based, exposes sensor + binary_sensor entities.
   folder name. CI cuts the release.
 - BLE deps belong in `manifest.json` `requirements`; declare `bluetooth` usage
   per HA's Bluetooth integration rules.
-- Test: `hassfest` + HACS validation, then `pytest` with
-  `pytest-homeassistant-custom-component`.
+- Test: standalone `for f in tests/test_*.py; do python3 "$f" || exit 1; done`,
+  then `pip install -r requirements-test.txt && python3 -m pytest -q tests/ha`
+  (real HA contracts, isolated from global stubs), plus hassfest and HACS validation.
 - Deploy/test via the published release artifact into TEST1/TEST2, not host
   file-copy. Backup + auto-rollback.
 

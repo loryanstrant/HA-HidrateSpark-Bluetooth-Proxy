@@ -71,6 +71,15 @@ class HidrateSparkConfigFlow(ConfigFlow, domain=DOMAIN):
         self._discovery_info: BluetoothServiceInfoBleak | None = None
         self._discovered: dict[str, BluetoothServiceInfoBleak] = {}
 
+    def _entry_for_address(self, address: str):
+        """Find an existing bottle even after its unique ID migrated to a name."""
+        address = address.upper()
+        return next((entry for entry in self._async_current_entries()
+                     if address in {
+                         str(entry.data.get(CONF_ADDRESS, "")).upper(),
+                         str(entry.data.get(CONF_DEVICE_KEY, "")).upper(),
+                     }), None)
+
     # ----------------------------------------------------------- bluetooth flow
 
     async def async_step_bluetooth(
@@ -79,6 +88,8 @@ class HidrateSparkConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle a bottle discovered via the bluetooth integration."""
         if not _looks_like_bottle(discovery_info):
             return self.async_abort(reason="not_supported")
+        if self._entry_for_address(discovery_info.address) is not None:
+            return self.async_abort(reason="already_configured")
         uid = stable_id(discovery_info.name, discovery_info.address)
         if uid == discovery_info.address.upper():
             # No name in this advert, so nothing tells a known bottle on a
@@ -138,6 +149,8 @@ class HidrateSparkConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle a manually-initiated flow."""
         if user_input is not None:
             address = user_input[CONF_ADDRESS].strip().upper()
+            if self._entry_for_address(address) is not None:
+                return self.async_abort(reason="already_configured")
             info = self._discovered.get(address)
             await self.async_set_unique_id(
                 stable_id(info.name if info else None, address)

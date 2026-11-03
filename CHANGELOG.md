@@ -1,11 +1,16 @@
 # Changelog
 
 ## What's new in v0.3.0
-HidrateSpark PRO 2 support, and fixes for every open issue.
+Experimental PRO 2 support, better connection recovery and more reliable refill tracking.
+Big thanks to **[kbaker827](https://github.com/kbaker827)** for
+[pull request #12](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/pull/12)
+and its regression tests. The original commit and authorship are preserved.
 
 ### Added
-- **HidrateSpark PRO 2 support.** The PRO 2 changes its Bluetooth address every so often
-  and drops quiet connections, which used to leave its device permanently "disconnected"
+- **Experimental HidrateSpark PRO 2 support.** Address rotation and idle connection
+  drops were reported by a PRO 2 owner; these changes are covered by simulated tests,
+  but this release has not been verified on PRO 2 hardware. They target the permanent
+  "disconnected" behaviour
   ([#10](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues/10)). Bottles
   are now identified by their advertised name (e.g. `h2o00003158`), and the integration
   follows the bottle to its new address without a reload or a duplicate device. Bottles
@@ -16,8 +21,8 @@ HidrateSpark PRO 2 support, and fixes for every open issue.
 - **Model and firmware on the device page**, read from the bottle's Device Information
   service where it has one.
 - **Fill and refills from the sip records themselves**
-  ([#11](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues/11)). Every
-  sip record carries the bottle's own weight before and after the sip. Current fill now
+  ([#11](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues/11)). On
+  firmware with usable before/after weight bytes, current fill now
   follows that, and a jump between one sip's "after" and the next sip's "before" counts as
   a refill. That catches refills the cap sensor missed, including ones made away from
   home and on bottles that don't report cap events reliably
@@ -34,9 +39,15 @@ HidrateSpark PRO 2 support, and fixes for every open issue.
   ([#10](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/issues/10)).
 - The integration no longer reloads every time its own stored data is updated; only a
   change of bottle size reloads it.
+- Empty fill stays empty after a restart. Unusable or rejected sip-weight samples no
+  longer alter fill/calibration, and refill deduplication survives a restart.
+- Manually entering an existing bottle's address no longer creates a second entry
+  after its identity has migrated to its advertised name.
 
 ### Upgrade notes
 - Requires Home Assistant 2024.12 or later (already the HACS minimum).
+- PRO 2 remains **experimental**. Real-bottle checks are still needed for PRO (v1)
+  migration/history, PRO 2 address rotation/reconnects, and legacy 32oz sip weights.
 - Existing bottles are migrated automatically and keep their device, entities and
   history. If an address rotation already created a duplicate "ghost" bottle, delete the
   one that is permanently unavailable after upgrading.

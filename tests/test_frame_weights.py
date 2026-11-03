@@ -160,6 +160,50 @@ class FillFromFramesTest(unittest.TestCase):
         self.assertAlmostEqual(b.current_fill_ml, 621 - vol, delta=10)
 
 
+class ReviewRegressionTest(unittest.TestCase):
+    def test_unusable_weights_do_not_change_fill_or_refills(self):
+        for before, after in [(35000, 35000), (35000, 35100), (65000, 64950)]:
+            with self.subTest(before=before, after=after):
+                b = bottle()
+                b.update_fill_from_weight(35287)
+                b._last_frame_weight_after = 35000
+                b.current_fill_ml = 400
+                self.assertTrue(b.add_sip(Sip(100.0, 30),
+                                         weight_before=before, weight_after=after))
+                self.assertEqual(b.current_fill_ml, 400)
+                self.assertEqual(b.refills_today, 0)
+                self.assertEqual(b._last_frame_weight_after, 35000)
+
+    def test_state_rejected_sip_does_not_learn_scale(self):
+        b = bottle()
+        b.update_fill_from_weight(35287)
+        b.current_fill_ml = 0
+        self.assertFalse(b.add_sip(Sip(100.0, 200),
+                                  weight_before=35200, weight_after=34880))
+        self.assertEqual(b._scale_ml_sum, 0)
+        self.assertEqual(b._scale_raw_sum, 0)
+        self.assertIsNone(b._last_frame_weight_after)
+
+    def test_empty_fill_survives_restart(self):
+        b = bottle()
+        b.current_fill_ml = 0
+        asyncio.run(b.async_save())
+        b2 = bottle()
+        b2._store = b._store
+        asyncio.run(b2.async_load())
+        self.assertEqual(b2.current_fill_ml, 0)
+
+    def test_frame_refill_dedup_survives_restart(self):
+        b = bottle()
+        replay(b, GOOD_FRAMES[:4])
+        asyncio.run(b.async_save())
+        b2 = bottle()
+        b2._store = b._store
+        asyncio.run(b2.async_load())
+        b2.refill("cap_close", decode(GOOD_FRAMES[3])[1])
+        self.assertEqual(b2.refills_today, 1)
+
+
 class PersistenceTest(unittest.TestCase):
     def test_scale_and_last_weight_survive_restart(self):
         b = bottle()

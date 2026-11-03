@@ -32,6 +32,9 @@ class HidrateSparkEntity(Entity):
         )
 
     async def async_added_to_hass(self) -> None:
+        # A first connection can finish before the entity registers its device.
+        # Apply cached metadata now; reconnects refresh it again.
+        await self._coordinator._handle_device_info(self._coordinator.device_info)
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass, self._coordinator.signal, self._handle_update

@@ -109,7 +109,7 @@ class BottleState:
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
-        self.current_fill_ml = int(data.get("current_fill_ml") or self.bottle_size_ml)
+        self.current_fill_ml = int(data.get("current_fill_ml", self.bottle_size_ml))
         self.lifetime_total_ml = int(data.get("lifetime_total_ml") or 0)
         self.last_refill_ts = data.get("last_refill_ts")
         self._today_date = str(data.get("today_date") or "")
@@ -121,6 +121,7 @@ class BottleState:
         self._scale_raw_sum = float(data.get("scale_raw_sum") or 0.0)
         self._scale_ml_sum = float(data.get("scale_ml_sum") or 0.0)
         self._last_frame_weight_after = data.get("last_frame_weight_after")
+        self._last_refill_source = data.get("last_refill_source")
 
         # Restore the recent-sip dedup window. Without this, a HA restart
         # empties the dedup history, and the bottle's initial drain replays its
@@ -159,6 +160,7 @@ class BottleState:
                 "scale_raw_sum": self._scale_raw_sum,
                 "scale_ml_sum": self._scale_ml_sum,
                 "last_frame_weight_after": self._last_frame_weight_after,
+                "last_refill_source": self._last_refill_source,
                 # Persist the dedup window so replays after a restart are
                 # recognised as duplicates rather than re-counted.
                 "recent_sips": [
@@ -320,39 +322,28 @@ class BottleState:
         self._scale_raw_sum = self._scale_raw_sum * SCALE_SUM_DECAY + weight_drop
         self._scale_ml_sum = self._scale_ml_sum * SCALE_SUM_DECAY + volume_ml
 
-    def _apply_frame_weights(
+    def _frame_weights_usable(
         self, sip: Sip, weight_before: int, weight_after: int
-    ) -> None:
-        """Use a sip frame's own before/after weights (issue #11).
+    ) -> bool:
+        """Validate undocumented weight bytes without changing bottle state.
 
-        Updates refill state and the learned scale. Fill itself is recomputed
-        by the caller once the sip has been counted.
-
-        A frame's "before" equals the previous frame's "after" unless water was
-        added in between. That makes refills visible even when the cap
-        notification was missed, e.g. a bottle refilled away from home, or a
-        legacy bottle that never sends one (issue #5).
+        An unusable pair must fail open for sip accounting, just as it does in
+        the BLE parser, but must not calibrate fill or create a refill.
         """
+        if sip.volume_ml <= 0 or not 0 < weight_after < weight_before <= 65535:
+            return False
+        sample = (weight_before - weight_after) / sip.volume_ml
+        if not SCALE_SAMPLE_MIN <= sample <= SCALE_SAMPLE_MAX:
+            return False
         last_after = self._last_frame_weight_after
-        gain = weight_before - last_after if last_after is not None else 0
         max_gain = REFILL_MAX_BOTTLES * self.raw_per_ml * self.bottle_size_ml
-        if gain > max_gain:
-            # More water than the bottle holds: a bad byte, not a refill. It
-            # must not reset fill, or a corrupt frame could slip past the
-            # sip-exceeds-fill guard below.
+        if last_after is not None and weight_before - last_after > max_gain:
             _LOGGER.warning(
                 "ignoring implausible weight jump %d -> %d between sip frames",
                 last_after, weight_before,
             )
-        elif gain >= REFILL_MIN_DELTA_RAW:
-            _LOGGER.info(
-                "REFILL detected from sip frames: weight %d -> %d between sips",
-                last_after, weight_before,
-            )
-            self.refill("sip_frame", weight_before)
-        drop = weight_before - weight_after
-        if drop > 0:
-            self._learn_scale(sip.volume_ml, drop)
+            return False
+        return True
 
     def add_sip(
         self,
@@ -380,12 +371,15 @@ class BottleState:
             ):
                 return False
 
-        has_weights = weight_before > 0 and weight_after > 0
-        # Run before the sip-exceeds-fill guard below: a refill detected here
-        # resets the fill, so a genuine first sip after an unobserved refill
-        # isn't rejected as "more than the bottle held".
-        if not rejected and has_weights:
-            self._apply_frame_weights(sip, weight_before, weight_after)
+        has_weights = self._frame_weights_usable(sip, weight_before, weight_after)
+        frame_refill = (
+            has_weights
+            and self._last_frame_weight_after is not None
+            and weight_before - self._last_frame_weight_after >= REFILL_MIN_DELTA_RAW
+        )
+        # A plausible refill can make room for a genuine post-refill sip, but
+        # no refill/scale mutation is committed until all sip guards pass.
+        fill_before = self.bottle_size_ml if frame_refill else self.current_fill_ml
 
         # A sip cannot be bigger than the water that was in the bottle. Without a
         # weight anchor that condition means "refilled out of band" and is handled
@@ -400,7 +394,7 @@ class BottleState:
         # reports show real sips being dropped.
         if not rejected and self.weight_full_raw is not None:
             slack_ml = self.bottle_size_ml * SIP_FILL_SLACK_FRACTION
-            if sip.volume_ml > self.current_fill_ml + slack_ml:
+            if sip.volume_ml > fill_before + slack_ml:
                 _LOGGER.warning(
                     "rejecting %dml sip: bottle only held %dml (+%dml slack)",
                     sip.volume_ml,
@@ -419,6 +413,11 @@ class BottleState:
             sip.rejected = True
             self.sips.append(sip)
             return False
+
+        if frame_refill:
+            self.refill("sip_frame", weight_before)
+        if has_weights:
+            self._learn_scale(sip.volume_ml, weight_before - weight_after)
 
         # Day rollover is keyed on wall-clock *now* (in HA's configured local
         # timezone), never on the sip's own timestamp. Buffered sips replayed

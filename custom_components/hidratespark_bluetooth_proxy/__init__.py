@@ -44,7 +44,8 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data = {**entry.data, CONF_ADDRESS: address}
         data.setdefault(CONF_DEVICE_KEY, address)
         # The entry title is the advertised name whenever one was seen at setup.
-        new_unique_id = stable_id(entry.title, address)
+        local_name = entry.data.get(CONF_LOCAL_NAME) or entry.title
+        new_unique_id = stable_id(local_name, address)
         clash = any(
             other.entry_id != entry.entry_id and other.unique_id == new_unique_id
             for other in hass.config_entries.async_entries(DOMAIN)

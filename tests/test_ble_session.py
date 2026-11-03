@@ -132,7 +132,8 @@ class DeviceInfoTest(unittest.TestCase):
         )
         asyncio.run(c._after_connect(g))
         asyncio.run(c._after_connect(g))
-        on_info.assert_awaited_once_with({"model": "PRO2", "sw_version": "2.1.4"})
+        self.assertEqual(on_info.await_count, 2)
+        on_info.assert_awaited_with({"model": "PRO2", "sw_version": "2.1.4"})
 
     def test_missing_device_info_service_is_harmless(self):
         on_info = AsyncMock()

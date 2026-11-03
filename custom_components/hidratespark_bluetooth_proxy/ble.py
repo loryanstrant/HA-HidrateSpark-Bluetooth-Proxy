@@ -7,6 +7,11 @@ characteristic for older firmwares (e.g. firmware 80.18 on nRF52832).
 Connection establishment is delegated to bleak-retry-connector, which means the
 same code path works for both local Bluetooth adapters and Home Assistant's
 ESPHome Bluetooth proxy transport.
+
+Bottle generations differ in which characteristics they expose (the PRO 2 is
+the newest seen), so the data path is chosen from the GATT table the bottle
+actually presents instead of assuming one layout, and a session that goes
+silent is torn down and re-established rather than trusted.
 """
 
 from __future__ import annotations
@@ -29,9 +34,12 @@ from .const import (
     CHAR_SET_POINT,
     CHAR_USER_DATA,
     CHAR_WEIGHT,
+    DEVICE_INFO_CHARS,
     DRAIN_BYTE,
     HANDSHAKE_COMMANDS,
     HANDSHAKE_INTERVAL_S,
+    KEEPALIVE_INTERVAL_S,
+    KEEPALIVE_MAX_FAILURES,
     MAX_IDENTICAL_SIP_FRAMES,
     MAX_SIP_PCT,
     REFILL_MIN_DELTA_RAW,
@@ -39,14 +47,19 @@ from .const import (
     REFILL_STABLE_SAMPLES,
     RAW_STABLE_TOLERANCE,
     RAW_UNITS_PER_ML,
+    SESSION_STALE_S,
     SIP_WEIGHT_CHECK_HEADROOM,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 # Callback signatures
-SipCallback = Callable[[float, int, int, bool], Awaitable[None]]
-"""await on_sip(timestamp_unix_s, volume_ml, total_reported_pct, rejected)."""
+SipCallback = Callable[[float, int, int, bool, int, int], Awaitable[None]]
+"""await on_sip(timestamp_unix_s, volume_ml, total_reported_pct, rejected,
+weight_before_raw, weight_after_raw) — weights are 0 when the frame has none."""
+
+DeviceInfoCallback = Callable[[dict[str, str]], Awaitable[None]]
+"""await on_device_info({"model": ..., "sw_version": ..., ...})."""
 
 BatteryCallback = Callable[[int], Awaitable[None]]
 StatusCallback = Callable[[bool, Optional[str]], Awaitable[None]]
@@ -55,6 +68,14 @@ RefillCallback = Callable[[str, Optional[int]], Awaitable[None]]
 
 WeightCallback = Callable[[int, int], Awaitable[None]]
 """await on_weight(raw_u16, low_byte_when_upright)."""
+
+
+def _services(client: BleakClient):
+    """The client's GATT table, or None if it isn't available (yet)."""
+    try:
+        return client.services
+    except Exception:  # noqa: BLE001 — bleak raises before discovery
+        return None
 
 
 class BottleClient:
@@ -73,6 +94,7 @@ class BottleClient:
         on_weight: WeightCallback,
         ble_device_provider: Callable[[], Optional[BLEDevice]],
         anchor_exists: Callable[[], bool],
+        on_device_info: Optional[DeviceInfoCallback] = None,
     ) -> None:
         self.address = address.upper().strip()
         self.name = name
@@ -84,6 +106,11 @@ class BottleClient:
         self._on_weight = on_weight
         self._ble_device_provider = ble_device_provider
         self._anchor_exists = anchor_exists
+        self._on_device_info = on_device_info
+        self._device_info_read = False
+        # Monotonic time of the last notification of any kind, for the stale-
+        # session watchdog in run().
+        self._last_rx = time.monotonic()
 
         self._client: Optional[BleakClient] = None
         self._stop = asyncio.Event()
@@ -158,6 +185,9 @@ class BottleClient:
                     disconnected_callback=self._on_disconnected,
                     use_services_cache=True,
                     max_attempts=3,
+                    # Re-resolve between attempts: a rotating-address bottle
+                    # may have moved, or a better proxy may have heard it.
+                    ble_device_callback=self._fresh_device_or(device),
                 )
             except Exception as err:  # noqa: BLE001 — log & retry
                 _LOGGER.warning("connect to %s failed: %s", self.address, err)
@@ -175,14 +205,7 @@ class BottleClient:
             try:
                 await self._after_connect(client)
                 await self._on_status(True, None)
-                while client.is_connected and not self._stop.is_set():
-                    if self._force_sync.is_set():
-                        self._force_sync.clear()
-                        try:
-                            await self._drain(client)
-                        except Exception as err:  # noqa: BLE001
-                            _LOGGER.warning("forced drain failed: %s", err)
-                    await self._sleep_or_wake(5.0)
+                await self._hold_session(client)
             except asyncio.CancelledError:
                 raise
             except Exception as err:  # noqa: BLE001
@@ -197,6 +220,51 @@ class BottleClient:
                 except Exception:  # noqa: BLE001
                     pass
                 await self._on_status(False, None)
+
+    def _fresh_device_or(self, fallback: BLEDevice) -> Callable[[], BLEDevice]:
+        def _resolve() -> BLEDevice:
+            return self._ble_device_provider() or fallback
+
+        return _resolve
+
+    async def _hold_session(self, client: BleakClient) -> None:
+        """Service a live session until it drops, goes quiet, or we stop.
+
+        A plain `is_connected` check is not enough: the PRO 2 has been seen to
+        stop answering while the link still reports connected (issue #10), and
+        older bottles occasionally stop notifying until their reset button is
+        pressed. A periodic drain doubles as a liveness probe, and a session
+        that has been silent for SESSION_STALE_S is rebuilt from scratch.
+        """
+        self._last_rx = time.monotonic()
+        next_keepalive = time.monotonic() + KEEPALIVE_INTERVAL_S
+        failures = 0
+        while client.is_connected and not self._stop.is_set():
+            now = time.monotonic()
+            forced = self._force_sync.is_set()
+            if forced or now >= next_keepalive:
+                self._force_sync.clear()
+                next_keepalive = now + KEEPALIVE_INTERVAL_S
+                try:
+                    await self._drain(client)
+                    failures = 0
+                except Exception as err:  # noqa: BLE001
+                    failures += 1
+                    _LOGGER.warning(
+                        "%s drain failed (%d/%d): %s",
+                        "forced" if forced else "keepalive",
+                        failures, KEEPALIVE_MAX_FAILURES, err,
+                    )
+                    if failures >= KEEPALIVE_MAX_FAILURES:
+                        _LOGGER.info("bottle stopped answering; reconnecting")
+                        return
+            if now - self._last_rx >= SESSION_STALE_S:
+                _LOGGER.info(
+                    "no data from bottle for %d min; reconnecting to re-handshake",
+                    SESSION_STALE_S // 60,
+                )
+                return
+            await self._sleep_or_wake(5.0)
 
     def _on_disconnected(self, _client: BleakClient) -> None:
         self._connected = False
@@ -218,6 +286,7 @@ class BottleClient:
         # half-succeeded).
         self._handshake_path = None
         self._data_char = None
+        self._device_info_read = False
         # Battery: read once, then subscribe for change notifications.
         try:
             data = await client.read_gatt_char(CHAR_BATTERY_LEVEL)
@@ -232,17 +301,26 @@ class BottleClient:
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("battery read failed: %s", err)
 
+        await self._read_device_info(client)
+        self._log_gatt_table(client)
+
         # Try modern handshake + USER_DATA notifications. Fall back to legacy.
+        # Characteristics the bottle doesn't expose are skipped rather than
+        # attempted, so a model with a different GATT layout still gets the
+        # path it does support instead of failing on the first missing UUID.
         modern_ok = False
-        try:
-            await self._handshake(client)
-            await client.start_notify(CHAR_USER_DATA, self._on_data_notify)
-            self._data_char = CHAR_USER_DATA
-            self._handshake_path = "modern"
-            modern_ok = True
-            _LOGGER.info("modern path active (USER_DATA notifications)")
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("modern handshake failed (%s); falling back to legacy", err)
+        if self._has_char(client, CHAR_USER_DATA):
+            try:
+                await self._handshake(client)
+                await client.start_notify(CHAR_USER_DATA, self._on_data_notify)
+                self._data_char = CHAR_USER_DATA
+                self._handshake_path = "modern"
+                modern_ok = True
+                _LOGGER.info("modern path active (USER_DATA notifications)")
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning(
+                    "modern handshake failed (%s); falling back to legacy", err
+                )
 
         if not modern_ok:
             try:
@@ -252,6 +330,12 @@ class BottleClient:
                 _LOGGER.info("legacy path active (DATA_POINT notifications)")
             except Exception:
                 self._handshake_path = None
+                # Neither data characteristic worked. A stale service cache is
+                # the usual cause after a firmware update, so drop it before the
+                # next attempt, and dump what the bottle does offer so an
+                # unsupported model can be diagnosed from a single log.
+                await self._clear_service_cache(client)
+                self._log_gatt_table(client, level=logging.WARNING)
                 raise
 
         # Cap state notifications (shared UUID with DEBUG)
@@ -275,10 +359,88 @@ class BottleClient:
     # ----------------------------------------------------------- handshake/drain
 
     async def _handshake(self, client: BleakClient) -> None:
+        sent = 0
         for target, payload_hex in HANDSHAKE_COMMANDS:
             char = CHAR_DEBUG if target == "DEBUG" else CHAR_SET_POINT
+            if not self._has_char(client, char):
+                _LOGGER.debug("handshake: %s not exposed, skipping", target)
+                continue
             await client.write_gatt_char(char, bytes.fromhex(payload_hex), response=True)
+            sent += 1
             await asyncio.sleep(HANDSHAKE_INTERVAL_S)
+        if not sent:
+            # USER_DATA without any handshake characteristic never streams, so
+            # this is not a usable modern path; let the caller fall back.
+            raise RuntimeError("no handshake characteristic exposed")
+
+    # ------------------------------------------------------------ GATT helpers
+
+    @staticmethod
+    def _has_char(client: BleakClient, uuid: str) -> bool:
+        """True if the bottle exposes `uuid`, or if we can't tell.
+
+        Fails open: when the service table isn't available we attempt the
+        operation and let it fail, which is the old behaviour.
+        """
+        services = _services(client)
+        if services is None:
+            return True
+        try:
+            return services.get_characteristic(uuid) is not None
+        except Exception:  # noqa: BLE001 — unresolved/odd backends
+            return True
+
+    @staticmethod
+    def _log_gatt_table(client: BleakClient, level: int = logging.DEBUG) -> None:
+        if not _LOGGER.isEnabledFor(level):
+            return
+        services = _services(client)
+        if services is None:
+            return
+        try:
+            for svc in services:
+                _LOGGER.log(level, "GATT service %s", svc.uuid)
+                for char in svc.characteristics:
+                    _LOGGER.log(
+                        level, "  char %s [%s]", char.uuid, ",".join(char.properties)
+                    )
+        except Exception as err:  # noqa: BLE001 — diagnostics only
+            _LOGGER.debug("could not enumerate GATT table: %s", err)
+
+    @staticmethod
+    async def _clear_service_cache(client: BleakClient) -> None:
+        clear = getattr(client, "clear_cache", None)
+        if clear is None:
+            return
+        try:
+            await clear()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("clearing service cache failed: %s", err)
+
+    async def _read_device_info(self, client: BleakClient) -> None:
+        """Read model/firmware once per connection, retrying transient failures."""
+        if self._device_info_read or self._on_device_info is None:
+            return
+        info: dict[str, str] = {}
+        for key, uuid in DEVICE_INFO_CHARS.items():
+            if not self._has_char(client, uuid):
+                continue
+            try:
+                raw = await client.read_gatt_char(uuid)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("device info %s unreadable: %s", key, err)
+                continue
+            value = bytes(raw).split(b"\x00", 1)[0].decode("utf-8", "replace").strip()
+            if value:
+                info[key] = value
+        self._device_info_read = True
+        if not info:
+            return
+        _LOGGER.info("bottle reports %s", info)
+        try:
+            await self._on_device_info(info)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("device info handler error: %s", err)
 
     async def _drain(self, client: BleakClient) -> None:
         if not self._data_char:
@@ -288,11 +450,13 @@ class BottleClient:
     # ------------------------------------------------------------- notify hooks
 
     async def _on_battery_notify(self, _char, data: bytearray) -> None:
+        self._last_rx = time.monotonic()
         if not data:
             return
         await self._on_battery(data[0])
 
     async def _on_data_notify(self, _char, data: bytearray) -> None:
+        self._last_rx = time.monotonic()
         # HydroSync sip-record frame: 20 bytes. This layout is derived from the
         # 13 frames logged on a real bottle between 2026-09-01 and 2026-09-03,
         # not from vendor documentation:
@@ -399,7 +563,14 @@ class BottleClient:
         # no total, but it has to reach the dedup window so the same record isn't
         # replayed as new on the next drain.
         try:
-            await self._on_sip(float(ts), int(volume_ml), int(total_pct), rejected)
+            await self._on_sip(
+                float(ts),
+                int(volume_ml),
+                int(total_pct),
+                rejected,
+                int(weight_before),
+                int(weight_after),
+            )
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("sip handler error: %s", err)
 
@@ -464,6 +635,7 @@ class BottleClient:
         return True
 
     async def _on_cap_notify(self, _char, data: bytearray) -> None:
+        self._last_rx = time.monotonic()
         _LOGGER.debug("cap frame raw=%s", data.hex() if data else "<empty>")
         if not self._connected or self._stop.is_set():
             return
@@ -483,6 +655,7 @@ class BottleClient:
             self._refill_check_task = asyncio.create_task(self._check_refill_after_close())
 
     async def _on_weight_notify(self, _char, data: bytearray) -> None:
+        self._last_rx = time.monotonic()
         if not self._connected or self._stop.is_set():
             return
         if len(data) < 2:

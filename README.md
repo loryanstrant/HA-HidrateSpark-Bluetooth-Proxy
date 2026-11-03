@@ -37,17 +37,32 @@ works with a directly-attached USB or onboard adapter.
 - 🔋 Battery percentage
 - 💧 Per-sip events with timestamps and dedup (within ±2 s / same volume)
 - 📊 Daily total (rolls at local midnight) and lifetime total
-- 🚰 Auto-refill detection (cap-open/close + weight delta ≥ 25 mL)
-- ⚖️ Live fill level from the on-bottle weight sensor (auto-calibrated)
+- 🚰 Auto-refill detection (cap-open/close + weight delta ≥ 25 mL), plus
+  refills spotted from the sip frames themselves when the cap event was missed
+- ⚖️ Live fill level from the on-bottle weight sensor (auto-calibrated, with a
+  per-bottle weight scale learned from your sips)
+- 🔀 Follows bottles that rotate their Bluetooth address (PRO 2) without
+  creating duplicate devices
 - 🛟 Sip-exceeds-fill fallback when no weight anchor exists yet
 - 🔁 State persists across HA restarts via the Store API
-- 📥 Buffered sips replay on reconnect with their original timestamps
+- 📥 Buffered sips replay on reconnect (recorded at arrival time; the observed frame format has no sip timestamp)
 
-**NOTE:** This has only been tested on a HidrateSpark PRO (v1) 21oz / 621ml with chug lid.
+## Supported bottles
+
+| Bottle | Status |
+|---|---|
+| HidrateSpark PRO (v1) 21oz / 621 mL | Tested by the maintainer |
+| HidrateSpark Steel / PRO 32oz (legacy firmware) | Tested by contributors |
+| HidrateSpark PRO 2 | **◐ Experimental in v0.3.0.** Address-rotation handling, characteristic auto-detection and connection recovery are covered by simulated tests, not verified on PRO 2 hardware. Please report your model, firmware and results |
+
+If your bottle connects but no sips arrive, enable debug logging for
+`custom_components.hidratespark_bluetooth_proxy` and attach the `GATT service`
+lines and the `bottle reports {...}` line to an issue. They show exactly which
+characteristics and firmware your bottle has.
 
 ## Requirements
 
-- Home Assistant 2024.4 or later
+- Home Assistant 2024.12 or later
 - The `bluetooth` integration set up (it's the default on HAOS)
 - Either a local Bluetooth adapter on the HA host **or** an ESPHome
   Bluetooth proxy within range of the bottle
@@ -59,14 +74,14 @@ works with a directly-attached USB or onboard adapter.
 ### HACS (recommended)
 
 1. HACS → ⋮ → **Custom repositories**
-2. Add `https://github.com/loryanstrant/HidrateSpark-HA-Integration` as an
+2. Add `https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy` as an
    **Integration**
-3. Install **HidrateSpark**, restart HA
-4. **Settings → Devices & Services → Add Integration → HidrateSpark**
+3. Install **HidrateSpark Bluetooth Proxy**, restart HA
+4. **Settings → Devices & Services → Add Integration → HidrateSpark Bluetooth Proxy**
 
 ### Manual
 
-Copy `custom_components/hidratespark/` into your HA `config/custom_components/`
+Copy `custom_components/hidratespark_bluetooth_proxy/` into your HA `config/custom_components/`
 folder, restart HA, then add the integration from **Devices & Services**.
 
 ## Setup
@@ -108,15 +123,20 @@ the app disconnects. Recommended setups:
 
 | Data | Buffered on bottle? | Recovered on reconnect? |
 |---|---|---|
-| Sips (volume + timestamp) | ✅ Yes | ✅ Replayed with original timestamps |
+| Sips (volume) | ● Yes | ● Replayed; timestamped when received, not at the original drink time |
 | Daily / lifetime totals | derived | ✅ Recomputed from replayed sips |
 | Battery | ✅ | ✅ Re-read on connect |
 | Current fill | ✅ | ✅ Snaps to true value within ~2 s |
 | Cap open/close events | ❌ notify-only | ❌ Lost while away |
-| Refill events while away | ❌ notify-only | ❌ Resulting fill level recovered, the event itself is not |
+| Refill events while away | ◐ Weight changes in sip records on supported firmware | ◐ Inferred between consecutive usable sip records; refills without such records are not recovered |
 
 ## Acknowledgements
 
+- Big thanks to **[kbaker827](https://github.com/kbaker827)** for
+  [pull request #12](https://github.com/loryanstrant/HA-HidrateSpark-Bluetooth-Proxy/pull/12):
+  experimental PRO 2 support, address-rotation recovery, options-flow fixes,
+  sip-frame refill detection and the accompanying regression tests. The original
+  contribution and commit authorship are preserved in the canonical project.
 - BLE handshake sequence and frame layout originally from
   [HydroSync](https://github.com/maxperron/HydroSync) (GPL-3.0).
 - Cap-state and weight-sensor characteristics reverse-engineered against

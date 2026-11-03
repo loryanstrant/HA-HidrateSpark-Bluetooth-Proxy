@@ -20,7 +20,8 @@
     },
     "abort": {
       "already_configured": "This bottle is already configured.",
-      "not_supported": "This Bluetooth device does not look like a HidrateSpark bottle."
+      "not_supported": "This Bluetooth device does not look like a HidrateSpark bottle.",
+      "name_unavailable": "The bottle has not advertised its name yet. It will be offered again once it does."
     }
   },
   "options": {

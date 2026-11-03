@@ -10,9 +10,29 @@ DOMAIN: Final = "hidratespark_bluetooth_proxy"
 CONF_ADDRESS: Final = "address"
 CONF_SIZE_ML: Final = "size_ml"
 CONF_NAME_PREFIX: Final = "name_prefix"
+# Stable key the device and its entities are registered under. It is the address
+# the bottle had when it was first added and never changes afterwards, so a
+# bottle that rotates its BLE address (issue #10, seen on the PRO 2) keeps the
+# same device and entity IDs.
+CONF_DEVICE_KEY: Final = "device_key"
+# The bottle's advertised name (e.g. h2o00003158), kept in entry data so it
+# survives the user renaming the entry. Used to follow a rotating address.
+CONF_LOCAL_NAME: Final = "local_name"
 
 DEFAULT_SIZE_ML: Final = 591
 DEFAULT_NAME_PREFIX: Final = "h2o"
+
+# Keepalive while connected. Some bottles (the PRO 2 in particular) quietly drop
+# an idle link or stop notifying while the GATT session still looks open, which
+# used to leave the integration "connected" to a bottle that sent nothing. Every
+# KEEPALIVE_INTERVAL_S we write a drain byte (a cheap request the bottle answers)
+# and tear the session down after KEEPALIVE_MAX_FAILURES consecutive failures.
+KEEPALIVE_INTERVAL_S: Final = 60.0
+KEEPALIVE_MAX_FAILURES: Final = 2
+# If no notification of any kind has arrived for this long, reconnect and redo
+# the handshake. An idle bottle overnight costs one cheap reconnect per window;
+# a wedged one recovers without anyone pressing the reset button.
+SESSION_STALE_S: Final = 30 * 60.0
 
 # Reconnect tuning
 RECONNECT_BACKOFF_INITIAL: Final = 1.0
@@ -36,6 +56,20 @@ CHAR_DATA_POINT: Final = "016e11b1-6c8a-4074-9e5a-076053f93784"
 
 # BLE: standard battery
 CHAR_BATTERY_LEVEL: Final = "00002a19-0000-1000-8000-00805f9b34fb"
+
+# BLE: standard Device Information service. Read once per connection, best
+# effort, so the device page shows the real model and firmware (and so a PRO 2
+# can be told apart from a PRO in bug reports).
+CHAR_MODEL_NUMBER: Final = "00002a24-0000-1000-8000-00805f9b34fb"
+CHAR_FIRMWARE_REV: Final = "00002a26-0000-1000-8000-00805f9b34fb"
+CHAR_HARDWARE_REV: Final = "00002a27-0000-1000-8000-00805f9b34fb"
+CHAR_MANUFACTURER: Final = "00002a29-0000-1000-8000-00805f9b34fb"
+DEVICE_INFO_CHARS: Final[dict[str, str]] = {
+    "model": CHAR_MODEL_NUMBER,
+    "sw_version": CHAR_FIRMWARE_REV,
+    "hw_version": CHAR_HARDWARE_REV,
+    "manufacturer": CHAR_MANUFACTURER,
+}
 
 # BLE: discovered on firmware 80.18 (nRF52832)
 CHAR_WEIGHT: Final = "1807a063-4e2d-4636-981a-35e93d1c7b94"
@@ -82,10 +116,30 @@ RAW_STABLE_TOLERANCE: Final = 4  # u16 units; settled jitter is ~±1-2
 # from a full+empty calibration on a 946 mL bottle: full u16 = 37115, empty
 # u16 = 35880, so 1235 raw units span 946 mL = ~1.305 raw/mL. This is a load-cell
 # property, so it should hold across bottle sizes on the same puck.
+#
+# It turns out NOT to hold across bottles: the 621 mL PRO's sip frames show a
+# steady ~1.59 raw/mL (issue #11). So this is now only the starting value; the
+# real per-bottle scale is learned from sip frames, see the next block.
 RAW_UNITS_PER_ML: Final = 1.305
+# Learned scale. Every sip frame carries the bottle's own before/after raw
+# weight, and the sip volume, so each genuine frame is a (raw delta, mL) sample.
+# Samples are pooled as running sums, which weights them by volume and keeps the
+# 1%-quantisation of small sips from dominating. Sums decay so the scale can
+# follow a different lid or a re-seated puck.
+SCALE_MIN_ML_OBSERVED: Final = 250  # mL of sips needed before trusting it
+SCALE_SUM_DECAY: Final = 0.98  # per sample
+# Anything outside these bounds is not a load cell reading, it is a bad frame.
+SCALE_SAMPLE_MIN: Final = 0.8
+SCALE_SAMPLE_MAX: Final = 3.0
 # A jump of this many u16 units across a cap open/close means the bottle was
 # refilled (~30 mL at the scale above) rather than just opened to drink.
 REFILL_MIN_DELTA_RAW: Final = 60
+# The cap-close check and the sip-frame check can both see the same refill.
+# A second report within this window re-anchors but is not counted again.
+REFILL_DEDUP_WINDOW_S: Final = 120.0
+# A refill can't add more than a bottle's worth (with margin for scale error);
+# a bigger jump in a frame's 'before' weight is a corrupt byte, not water.
+REFILL_MAX_BOTTLES: Final = 1.3
 
 # 13-step handshake from HydroSync. Each tuple is (target_char, hex_payload).
 # Writes are 50 ms apart.
